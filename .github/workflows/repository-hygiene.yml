@@ -248,6 +248,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          # planRelease walks back to the previous release tag, so it needs history.
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -260,10 +263,22 @@ jobs:
           cache-dependency-path: go.sum
       - name: Install dependencies
         run: npm ci
+      # The packaged version must match the release identity the publish job
+      # validates, so this job derives it the same way `validate` does.
+      - name: Determine release identity
+        id: release
+        env:
+          PIIK_BUILD_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_version || '' }}
+        run: >-
+          node scripts/release-version.mjs
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIIK_RELEASES_ENABLED == 'true' && 'plan' || 'build' }}
+          --github-output
       # The Linux ZIP writer shells out to the `zip` CLI.
       - name: Ensure zip is available
         run: command -v zip >/dev/null || (sudo apt-get update && sudo apt-get install -y zip)
       - name: Package Windows Server candidate
+        env:
+          PIIK_BUILD_VERSION: ${{ steps.release.outputs.version }}
         run: >-
           node scripts/package-server-release.mjs "$RUNNER_TEMP/server-release"
           --os windows --arch amd64
