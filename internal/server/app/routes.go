@@ -113,6 +113,14 @@ func (s *Server) route(
 		return
 	}
 
+	// Operator-supplied release packages live beside the binary rather than
+	// inside the embedded Web build, so a package can be replaced without
+	// rebuilding and redeploying the server.
+	if strings.HasPrefix(path, "/download/") {
+		s.handleDownload(writer, request)
+		return
+	}
+
 	if s.frontend != nil {
 		s.frontend.ServeHTTP(writer, request)
 		return

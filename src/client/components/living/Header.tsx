@@ -105,8 +105,22 @@ export function HeaderControls({ diagnosticControl }: { diagnosticControl?: Reac
       )}
     </button>
   );
+  const downloadTitle = t("header.downloadApp");
+  const downloadButton = (
+    <a
+      className="lr-btn"
+      style={{ minWidth: 40, height: 40, borderRadius: 999, textDecoration: "none" }}
+      href="/download/piik-app-windows-amd64.zip"
+      aria-label={downloadTitle}
+      title={downloadTitle}
+    >
+      <Glyph name="arrowDown" size={16} />
+      {vis ? null : <span className="lr-cap">{t("header.downloadApp.short")}</span>}
+    </a>
+  );
   return (
     <span className="lr-top-right lr-header-controls">
+      {downloadButton}
       <LanguageControl />
       <Tooltip kind={theme === "dark" ? "hint-theme-light" : "hint-theme-dark"} text={vis ? undefined : themeTitle} place="below" align="end">
         {themeButton}

@@ -186,12 +186,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: amd64
+          - os: linux
+            arch: amd64
             runner: ubuntu-latest
             artifact: piik-server
-          - arch: arm64
+            container: true
+          - os: linux
+            arch: arm64
             runner: ubuntu-24.04-arm
             artifact: piik-server-linux-arm64
+            container: true
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
@@ -214,7 +218,7 @@ jobs:
       - name: Package Server release
         run: >-
           node scripts/package-server-release.mjs "$RUNNER_TEMP/server-release"
-          --arch "${{ matrix.arch }}"
+          --os "${{ matrix.os }}" --arch "${{ matrix.arch }}"
           --container-image "piik-candidate:$GITHUB_SHA-${{ matrix.arch }}"
       - name: Check the container and deployment recipe
         run: npm run check:container -- "piik-candidate:$GITHUB_SHA-${{ matrix.arch }}" "$GITHUB_SHA"
@@ -231,6 +235,42 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}-${{ github.sha }}
+          path: ${{ runner.temp }}/server-release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # Windows has no container recipe, so it runs outside the release gate: every
+  # push and pull request proves the package still builds, and a release reuses
+  # the same artifact because its name matches the publish download pattern.
+  server-windows-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install dependencies
+        run: npm ci
+      # The Linux ZIP writer shells out to the `zip` CLI.
+      - name: Ensure zip is available
+        run: command -v zip >/dev/null || (sudo apt-get update && sudo apt-get install -y zip)
+      - name: Package Windows Server candidate
+        run: >-
+          node scripts/package-server-release.mjs "$RUNNER_TEMP/server-release"
+          --os windows --arch amd64
+      - name: Upload Windows Server candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: piik-server-windows-amd64-${{ github.sha }}
           path: ${{ runner.temp }}/server-release/*
           if-no-files-found: error
           retention-days: 14
@@ -317,6 +357,7 @@ jobs:
       - validate
       - release-server
       - release-apps
+      - server-windows-candidate
     if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
