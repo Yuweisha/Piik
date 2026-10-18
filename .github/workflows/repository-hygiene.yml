@@ -190,12 +190,16 @@ jobs:
             arch: amd64
             runner: ubuntu-latest
             artifact: piik-server
-            container: true
           - os: linux
             arch: arm64
             runner: ubuntu-24.04-arm
             artifact: piik-server-linux-arm64
-            container: true
+          # Cross-compiled on the same Linux runner: CGO stays off and the
+          # package is a ZIP instead of the Linux tar.gz.
+          - os: windows
+            arch: amd64
+            runner: ubuntu-latest
+            artifact: piik-server-windows-amd64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     env:
@@ -215,77 +219,19 @@ jobs:
           cache-dependency-path: go.sum
       - name: Install dependencies
         run: npm ci
+      # Only the Windows target writes a ZIP, and the Linux ZIP writer shells
+      # out to the `zip` CLI.
+      - name: Ensure zip is available
+        if: matrix.os == 'windows'
+        run: command -v zip >/dev/null || (sudo apt-get update && sudo apt-get install -y zip)
       - name: Package Server release
         run: >-
           node scripts/package-server-release.mjs "$RUNNER_TEMP/server-release"
           --os "${{ matrix.os }}" --arch "${{ matrix.arch }}"
-          --container-image "piik-candidate:$GITHUB_SHA-${{ matrix.arch }}"
-      - name: Check the container and deployment recipe
-        run: npm run check:container -- "piik-candidate:$GITHUB_SHA-${{ matrix.arch }}" "$GITHUB_SHA"
-      - name: Save the verified container
-        run: docker save "piik-candidate:$GITHUB_SHA-${{ matrix.arch }}" --output "$RUNNER_TEMP/piik-container-${{ matrix.arch }}.tar"
-      - name: Upload the verified container
-        uses: actions/upload-artifact@v7
-        with:
-          name: piik-container-${{ matrix.arch }}-${{ github.sha }}
-          path: ${{ runner.temp }}/piik-container-${{ matrix.arch }}.tar
-          if-no-files-found: error
-          retention-days: 14
       - name: Upload Server release
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}-${{ github.sha }}
-          path: ${{ runner.temp }}/server-release/*
-          if-no-files-found: error
-          retention-days: 14
-
-  # Windows has no container recipe, so it runs outside the release gate: every
-  # push and pull request proves the package still builds, and a release reuses
-  # the same artifact because its name matches the publish download pattern.
-  server-windows-candidate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          # planRelease walks back to the previous release tag, so it needs history.
-          fetch-depth: 0
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: Install dependencies
-        run: npm ci
-      # The packaged version must match the release identity the publish job
-      # validates, so this job derives it the same way `validate` does.
-      - name: Determine release identity
-        id: release
-        env:
-          PIIK_BUILD_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_version || '' }}
-        run: >-
-          node scripts/release-version.mjs
-          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.PIIK_RELEASES_ENABLED == 'true' && 'plan' || 'build' }}
-          --github-output
-      # The Linux ZIP writer shells out to the `zip` CLI.
-      - name: Ensure zip is available
-        run: command -v zip >/dev/null || (sudo apt-get update && sudo apt-get install -y zip)
-      - name: Package Windows Server candidate
-        env:
-          PIIK_BUILD_VERSION: ${{ steps.release.outputs.version }}
-        run: >-
-          node scripts/package-server-release.mjs "$RUNNER_TEMP/server-release"
-          --os windows --arch amd64
-      - name: Upload Windows Server candidate
-        uses: actions/upload-artifact@v7
-        with:
-          name: piik-server-windows-amd64-${{ github.sha }}
           path: ${{ runner.temp }}/server-release/*
           if-no-files-found: error
           retention-days: 14
@@ -372,7 +318,6 @@ jobs:
       - validate
       - release-server
       - release-apps
-      - server-windows-candidate
     if: needs.validate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -403,35 +348,11 @@ jobs:
           pattern: piik-app-*-${{ github.sha }}
           path: ${{ runner.temp }}/publish-release
           merge-multiple: true
-      - name: Download the verified container
-        uses: actions/download-artifact@v8
-        with:
-          pattern: piik-container-*-${{ github.sha }}
-          path: ${{ runner.temp }}/container
-          merge-multiple: true
-      - name: Load the verified container
-        run: |
-          for arch in amd64 arm64; do
-            docker load --input "$RUNNER_TEMP/container/piik-container-$arch.tar"
-          done
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
       # Local descriptors/manifests/checksums are validated before publishing.
       # Release assets contain packages only; checksums appear in the release body.
       - name: Publish packages with release notes and checksums
         run: >-
           node scripts/publish-release.mjs
-          "$RUNNER_TEMP/publish-release" "$PIIK_RELEASE_VERSION" "$GITHUB_SHA"
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PIIK_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-      - name: Publish the matching Server container
-        run: >-
-          node scripts/publish-container.mjs "piik-candidate:$GITHUB_SHA"
           "$RUNNER_TEMP/publish-release" "$PIIK_RELEASE_VERSION" "$GITHUB_SHA"
         env:
           GH_TOKEN: ${{ github.token }}
