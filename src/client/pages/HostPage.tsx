@@ -26,6 +26,7 @@ import { AppHeader, LedStrip } from "../components/living/Header";
 import { WelcomeLine } from "../components/living/WelcomeLine";
 import type { CouchEntry } from "../components/living/Couch";
 import { SharingSettings } from "../components/living/SharingSettings";
+import { HostShareControls } from "../components/living/HostShareControls";
 import { HostMicrophone, HostMicrophoneSettings } from "../components/living/HostMicrophone";
 import { LiveAudioExclusion } from "../components/living/AudioExclusionSelect";
 import { RoomInteractions } from "../components/living/RoomInteractions";
@@ -52,7 +53,7 @@ import type { ComicKind } from "../components/living/Comic";
 import type { HintKind } from "../ui/visual-kinds";
 import type { ComicTone } from "../components/living/comic-presentation";
 import { Tooltip } from "../components/living/Tooltip";
-import { AudioBitrateControl, PicturePreferenceControl, QualityPresets, ResolutionControl, VideoRateControls } from "../components/living/QualityPresets";
+import { AudioBitrateControl, PicturePreferenceControl, PictureSettingsSummary, QualityPresets, ResolutionControl, VideoRateControls } from "../components/living/QualityPresets";
 import { RoomCodeInput, RoomCodeError } from "../components/living/RoomCodeInput";
 import { MetricCell } from "../components/living/Metrics";
 import {
@@ -79,6 +80,7 @@ import { say, useCopy, type CopyKey } from "../ui/copy";
 import { resolveMediaFailure, type MediaFailure } from "../ui/media-failure";
 import {
   ApiError,
+  getRuntimeCapabilities,
   createRoom,
   replaceOwnedRoom,
   updateRoomAccess,
@@ -178,7 +180,9 @@ import {
   nativeCaptureTargetKey,
   type NativeCapturePath,
 } from "../native/capture-selection";
-import type { NativeCaptureTarget } from "../native/wire";
+import type { NativeCaptureTarget, RemoteControlState } from "../native/wire";
+import { HostRemoteControl } from "../components/living/HostRemoteControl";
+import { InputRoute } from "../remote-control/input-route";
 import {
   MAX_ENDPOINT_MEDIA_CHILDREN,
   reconcileBoundedMediaChildren,
@@ -193,8 +197,8 @@ import {
 } from "../webrtc/video-codec";
 import { preferredVideoCodecForTrack } from "../webrtc/video-codec-preflight";
 import {
-  hostActionErrorNotice,
-  hostServerErrorNotice,
+  hostActionErrorKey,
+  hostServerErrorKey,
   shouldPauseLocalPreview,
   sourceSwitchNotice,
   isCapturePermissionFailure,
@@ -242,14 +246,14 @@ function captureDetails(stream: MediaStream, native = false, sourceAudio?: boole
         ? `${settings.width}x${settings.height}`
         : null,
     frameRate: settings?.frameRate ?? null,
-    hasSourceAudio: sourceAudio ?? stream.getAudioTracks().length > 0,
+    hasSourceAudio: sourceAudio ?? stream.getAudioTracks().some(track => track.readyState === "live"),
   };
 }
 
-function readableError(error: unknown, action: HostAction): string {
+function readableError(error: unknown, action: HostAction): StatusNoticeMessage {
   return error instanceof ApiError
     ? error.message
-    : hostActionErrorNotice(error, action);
+    : { key: hostActionErrorKey(error, action) };
 }
 
 function closeAbandonedRoom(room: HostRoomIdentity): void {
@@ -320,6 +324,7 @@ function hostTerminationKey(reason: SignalingTerminationReason): CopyKey {
 
 interface HostPageProps {
   roomInteractionsAvailable?: boolean;
+  roomReactionIds?: readonly string[];
   hostRoomSessionAvailable?: boolean;
   sfuAvailable?: boolean;
   sfuOnly?: boolean;
@@ -342,6 +347,7 @@ type ShareSourceSelection =
 
 export function HostPage({
   roomInteractionsAvailable = false,
+  roomReactionIds,
   hostRoomSessionAvailable = false,
   sfuAvailable = false,
   sfuOnly = false,
@@ -375,6 +381,7 @@ export function HostPage({
     useState<SignalConnectionState>("offline");
   const [stream, setStream] = useState<MediaStream | null>(null);
   const hostAudioRef = useRef<HostAudio | null>(null);
+  const audioAvailableRef = useRef(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
   const [interactionSession, setInteractionSession] = useState<RoomInteractionSession | null>(null);
   const [microphoneVolume, setMicrophoneVolume] = useState(1);
@@ -387,6 +394,8 @@ export function HostPage({
     return client ? client.microphones() : browserCaptureDevices("audioinput");
   }, []);
   const [nativeActive, setNativeActive] = useState(false);
+  const [remoteControlState, setRemoteControlState] = useState<RemoteControlState | null>(null);
+  const remoteInputPeersRef = useRef<Extract<ServerMessage, { type: "remote-input-peers" }>["peers"]>([]);
   const [showCaptureBorder, setShowCaptureBorder] = useState(false);
   const [nativeSources, setNativeSources] =
     useState<NativeSourceList | null>(null);
@@ -476,7 +485,7 @@ export function HostPage({
     readDisplayName(defaultHostDisplayName(vis)),
   );
   const [displayNameDraft, setDisplayNameDraft] = useState(displayName);
-  const [displayNameError, setDisplayNameError] = useState<string | null>(null);
+  const [displayNameError, setDisplayNameError] = useState(false);
   const [editingDisplayName, setEditingDisplayName] = useState(false);
   const [viewerQualityEvidence, setViewerQualityEvidence] = useState<
     ReadonlyMap<string, ViewerQualityEvidencePresentation>
@@ -513,7 +522,9 @@ export function HostPage({
     if (error instanceof NativeMediaBridgeError || (error instanceof NativeRequestError &&
       (["unavailable", "disconnected", "send-failed"].includes(error.reason) || error.operation === "prepare-edge"))) action = "connection";
     const permissionMissing = isCapturePermissionFailure(error, action);
-    setNoticeValue({ kind: "text", text: readableError(error, action), target, tone: permissionMissing ? "warn" : "bad",
+    const message = readableError(error, action);
+    setNoticeValue({ ...(typeof message === "string" ? { kind: "text", text: message } : { kind: "key", ...message }),
+      target, tone: permissionMissing ? "warn" : "bad",
       failureCode: error instanceof ApiError ? `site/http-${error.status}` : hostFailureCode(error, action),
       comic: permissionMissing ? "hint-capture-browser" : action === "connection" ? "route-failed" : action === "capture" || action === "source"
         ? "source-failed" : action === "quality" || action === "sourceAudio" ? "settings-failed" : "warning" });
@@ -605,6 +616,7 @@ export function HostPage({
   const nativeShareGenerationRef = useRef<string | null>(null);
   const serverShareGenerationRef = useRef<string | null>(null);
   const nativeMediaBridgeRef = useRef<NativeMediaBridge | null>(null);
+  const nativeInputRoute = useMemo(() => new InputRoute(() => {}), []);
   const nativeMediaIngressRef = useRef<NativeMediaIngress | null>(null);
   const nativeEventCleanupRef = useRef<(() => void) | null>(null);
   const nativeClientCloseCleanupRef = useRef<(() => void) | null>(null);
@@ -928,6 +940,7 @@ export function HostPage({
     hostSfuRouteRef.current = null;
     hostAudioRef.current?.dispose();
     hostAudioRef.current = null;
+    audioAvailableRef.current = false;
     setMicrophoneEnabled(false);
     setMicrophonePending(false);
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1247,14 +1260,24 @@ export function HostPage({
             endSharing({ key: "native.fail.edge", failureCode: "app/browser-media/connection" }, true, "route-failed", "bad");
           }
         },
+        undefined,
+        () => {
+          if (nativeMediaBridgeRef.current === bridge && isCurrentShare(generation, shareGeneration)) {
+            nativeInputRoute.setUpstream(bridge?.getRemoteInput() ?? null);
+          }
+        },
       );
       nativeMediaBridgeRef.current = bridge;
       nativeSourceAudioRef.current = undefined;
+      audioAvailableRef.current = false;
       nativeSourceSelectionRef.current = selection;
       nativeEventCleanup = client.onEvent((event) => {
         if (event.shareId !== shareGeneration || !isCurrentShare(generation, shareGeneration) || nativeClientRef.current !== client) return;
+        if (event.type === "remote-control-state") setRemoteControlState(event);
         if (event.type === "audio-state") {
           nativeSourceAudioRef.current = event.sourceAudio;
+          audioAvailableRef.current = event.sourceAudio || event.microphone;
+          signalRef.current?.setAudioAvailable(audioAvailableRef.current);
           setMicrophoneEnabled(event.microphone);
           setDetails(previous => previous ? { ...previous, hasSourceAudio: event.sourceAudio } : previous);
           if (event.failed) setNoticeValue({ kind: "key", key: "host.microphone.unavailable", target: "operation", comic: "warning", tone: "warn" });
@@ -1290,12 +1313,14 @@ export function HostPage({
       }
       if (nativeClientRef.current !== client) throw new NativeRequestError("unavailable", "start-share");
       nativeSourceAudioRef.current ??= started.sourceAudio ?? started.audio;
+      audioAvailableRef.current = nativeSourceAudioRef.current || audioAvailableRef.current;
       videoCodecRef.current = manualVideoCodecPreference(started.codec);
       // Register ownership before waiting for the local bridge. A native edge
       // may fail immediately after becoming ready.
       ownNativeClient(client);
       nativeShareGenerationRef.current = shareGeneration;
       nativeModeRef.current = true;
+      if (client.health.nativeMedia.remoteInput) await client.setRemoteInputPeers(shareGeneration, remoteInputPeersRef.current);
       setNativeActive(true);
       const stream = await bridge.start(started.audio);
       if (!isCurrentShare(generation, shareGeneration)) {
@@ -1581,6 +1606,7 @@ export function HostPage({
     const shareGeneration = nativeShareGenerationRef.current;
     const ingress = nativeMediaIngressRef.current;
     nativeMediaIngressRef.current = null;
+    nativeInputRoute.dispose();
     nativeMediaBridgeRef.current?.dispose();
     nativeMediaBridgeRef.current = null;
     ingress?.dispose();
@@ -1591,6 +1617,7 @@ export function HostPage({
     nativeSourceAudioRef.current = undefined;
     nativeSourceSelectionRef.current = null;
     setNativeActive(false);
+    setRemoteControlState(null);
     if (!client || !shareGeneration) {
       releaseUnusedNativeClient();
       return;
@@ -2084,7 +2111,9 @@ export function HostPage({
                   input.iceConfig,
                   input.stream,
                   input.profile,
-                  events,
+                  { ...events, onInputChannel: nativeModeRef.current
+                    ? (channel, connection) => nativeInputRoute.attachChild(channel, connection)
+                    : undefined },
                   input.videoCodec,
                   candidate.connectionId,
                   input.natPredictionEnabled,
@@ -2507,7 +2536,10 @@ export function HostPage({
 
   function connectRoomSignal(activeRoom: HostRoomState, shareGeneration?: string, allowReplacement = true): SignalingClient {
     const previous = signalRef.current;
-    if (hostRoomSessionAvailable && previous?.ownsHostRoom(activeRoom.roomId, activeRoom.hostToken)) return previous;
+    if (hostRoomSessionAvailable && previous?.ownsHostRoom(activeRoom.roomId, activeRoom.hostToken)) {
+      previous.setAudioAvailable(audioAvailableRef.current);
+      return previous;
+    }
     previous?.stop();
     let authenticated = false;
     const hostClientId = getStableClientId("host", activeRoom.roomId);
@@ -2517,7 +2549,7 @@ export function HostPage({
     displayNameRef.current = initialDisplayName;
     setDisplayName(initialDisplayName);
     setDisplayNameDraft(initialDisplayName);
-    setDisplayNameError(null);
+    setDisplayNameError(false);
     const signal = new SignalingClient(
       {
         roomId: activeRoom.roomId,
@@ -2549,6 +2581,14 @@ export function HostPage({
         },
         onMessage: (message) => {
           if (signalRef.current !== signal || !isCurrentRoomAuthority(activeRoom)) return;
+          if (message.type === "remote-input-peers") {
+            remoteInputPeersRef.current = message.peers;
+            const client = nativeClientRef.current, shareId = nativeShareGenerationRef.current;
+            if (client?.health.nativeMedia.remoteInput && nativeModeRef.current && shareId) {
+              void client.setRemoteInputPeers(shareId, message.peers).catch(error => debugError("native", "input-endpoints", error));
+            }
+            return;
+          }
           const currentGeneration = activeGenerationRef.current;
           const currentShareGeneration = shareGenerationRef.current;
           const localShareActive =
@@ -2589,7 +2629,7 @@ export function HostPage({
             return;
           }
           if (message.type === "error" && message.code === "HOST_ALREADY_CONNECTED") {
-            endRoomSession(hostServerErrorNotice(message.code), "signal-failed");
+            endRoomSession({ key: hostServerErrorKey(message.code) }, "signal-failed");
             return;
           }
           const reauthenticated =
@@ -2631,7 +2671,7 @@ export function HostPage({
           }
           if (message.type === "sharing-start-failed") {
             if (localShareActive && message.shareGeneration === currentShareGeneration) {
-              endSharing(hostServerErrorNotice(message.code), false, "signal-failed", "bad");
+              endSharing({ key: hostServerErrorKey(message.code) }, false, "signal-failed", "bad");
             }
             return;
           }
@@ -2641,7 +2681,7 @@ export function HostPage({
             return;
           }
           if (message.type === "error") {
-            setNotice(hostServerErrorNotice(message.code), "signal-failed", "bad");
+            setNoticeKey(hostServerErrorKey(message.code), "signal-failed", "bad");
             return;
           }
           const mediaActive =
@@ -2663,9 +2703,16 @@ export function HostPage({
         },
       },
       undefined,
-      { roomInteractions: roomInteractionsAvailable },
+      { roomInteractions: roomInteractionsAvailable, roomReactionIds },
     );
     signalRef.current = signal;
+    signal.setAudioAvailable(audioAvailableRef.current);
+    remoteInputPeersRef.current = [];
+    void getRuntimeCapabilities().then(capabilities => {
+      if (signalRef.current === signal && capabilities.roomInteractions) setInteractionSession(signal.enableRoomInteractions(capabilities.roomReactionIds));
+      if (signalRef.current === signal && capabilities.remoteInput) signal.enableRemoteInput();
+      if (signalRef.current === signal && capabilities.audioPresence) signal.enableAudioPresence();
+    }).catch(() => { /* Optional input does not block sharing. */ });
     setInteractionSession(signal.interactions);
     return signal;
   }
@@ -2761,7 +2808,14 @@ export function HostPage({
     }
     if (captured) {
       if (selection.kind === "browser") {
-        hostAudioRef.current = new HostAudio(captured, setMicrophoneEnabled, selection.source ?? "browser");
+        hostAudioRef.current = new HostAudio(captured, setMicrophoneEnabled, selection.source ?? "browser", available => {
+          if (!isCurrentShare(generation, shareGeneration)) return;
+          audioAvailableRef.current = available;
+          signalRef.current?.setAudioAvailable(available);
+          const source = hostAudioRef.current?.sourceStream;
+          if (source) setDetails(captureDetails(source));
+        });
+        audioAvailableRef.current = hostAudioRef.current.audioAvailable;
         if (selection.source === "camera") setCameraDevice(selection.deviceId ?? "");
       }
       streamRef.current = captured;
@@ -3435,13 +3489,13 @@ export function HostPage({
     const hostFallback = defaultHostDisplayName(vis);
     const saved = saveDisplayName(displayNameDraft, hostFallback);
     if (!saved) {
-      setDisplayNameError(say("host.nameError"));
+      setDisplayNameError(true);
       return;
     }
     displayNameRef.current = saved;
     setDisplayName(saved);
     setDisplayNameDraft(saved);
-    setDisplayNameError(null);
+    setDisplayNameError(false);
     setEditingDisplayName(false);
     setHasCustomDisplayName(readStoredDisplayName() !== null);
     if (signalRef.current && !signalRef.current.setDisplayName(saved)) {
@@ -3735,21 +3789,12 @@ export function HostPage({
               />
             ) : null}
           </StageTv>
-          <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
-            {phase === "live" ? <>
+          <HostShareControls
+            actions={phase === "live" ? <>
               <HostMicrophone enabled={microphoneEnabled} pending={microphonePending}
                 unavailable={nativeActive && !nativeClientRef.current?.health.nativeMedia.microphone} paused={sharingPaused} disabled={switchingSource || changingQuality}
                 volume={microphoneVolume}
                 onToggle={() => void changeMicrophone(!microphoneEnabled, microphoneDevices[nativeActive ? "native" : "browser"])} />
-              <Btn
-                icon={sharingPaused ? "play" : "pause"}
-                cap={sharingPaused ? "host.resume" : "host.pause"}
-                title={sharingPaused ? "host.resume" : "host.pause"}
-                hint={sharingPaused ? "hint-resume" : "hint-pause"}
-                draw="host-share-toggle"
-                disabled={switchingSource || changingQuality || microphonePending}
-                onClick={toggleSharingPause}
-              />
               <Btn
                 id="host-switch-source"
                 icon="switchSource"
@@ -3760,7 +3805,26 @@ export function HostPage({
                 onClick={() => void switchSource()}
               />
             </> : null}
-            <Btn
+            remote={nativeActive && remoteControlState && <HostRemoteControl
+              mode={remoteControlState.mode}
+              platform={remoteControlState.platform}
+              disabled={sharingPaused || switchingSource}
+              requests={remoteControlState.requests.map(request => {
+                return { ...request, name: viewers.find(viewer => viewer.peerId === request.peerId)?.label ?? t("common.name.viewerDefault") };
+              })}
+              onPolicy={async (mode, password) => {
+                const client = nativeClientRef.current;
+                const shareId = nativeShareGenerationRef.current;
+                if (!client || !shareId) throw new Error("Native share is unavailable");
+                await client.setRemoteControlPolicy(shareId, mode, password);
+              }}
+              onDecide={async (id, allow) => {
+                const client = nativeClientRef.current;
+                const shareId = nativeShareGenerationRef.current;
+                if (!client || !shareId) throw new Error("Native share is unavailable");
+                await client.setRemoteControl(shareId, id, allow);
+              }} />}
+            settings={<Btn
               icon="sliders"
               busy={changingQuality}
               cap="host.settings.button"
@@ -3771,8 +3835,17 @@ export function HostPage({
               expanded={showAdvanced}
               controls="host-advanced-door"
               onClick={() => setShowAdvanced((current) => !current)}
-            />
-            {phase === "live" ? (
+            />}
+            pause={phase === "live" && <Btn
+              icon={sharingPaused ? "play" : "pause"}
+              cap={sharingPaused ? "host.resume" : "host.pause"}
+              title={sharingPaused ? "host.resume" : "host.pause"}
+              hint={sharingPaused ? "hint-resume" : "hint-pause"}
+              draw="host-share-toggle"
+              disabled={switchingSource || changingQuality || microphonePending}
+              onClick={toggleSharingPause}
+            />}
+            ending={phase === "live" ? (
               <Btn
                 id="host-stop-share"
                 icon="stop"
@@ -3793,7 +3866,7 @@ export function HostPage({
                 onClick={() => endSharing({ key: "host.startCancelled" })}
               />
             ) : null}
-          </div>
+          />
           <div className="lr-stage-notices" role="status" aria-live="polite">
             {details?.hasSourceAudio === false && stream ? (
               <Pill icon="speakerOff" label={t("host.noAudio")} comic="no-audio" tone="off" />
@@ -3815,6 +3888,7 @@ export function HostPage({
                   maxAudioBitrate: screenAudioBitrate(advancedQualityRef.current.maxAudioBitrate),
                 })} />
             }
+            pictureSummary={<PictureSettingsSummary value={advancedQuality} />}
             picture={<>
               <ResolutionControl value={advancedQuality.resolution} limits={videoLimits}
                 disabled={phase === "starting" || switchingSource}
@@ -3826,11 +3900,25 @@ export function HostPage({
               <PicturePreferenceControl value={advancedQuality.degradationPreference}
                 disabled={phase === "starting" || switchingSource}
                 onChange={degradationPreference => changeAdvancedQuality({ degradationPreference })} />
+              <div className="lr-door-group">
+                <span className="lr-door-glyph"><Glyph name="puzzle" size={19} /><Cap k="host.advanced.codec" /></span>
+                <div className="lr-row-group" role="group" aria-label={t("host.advanced.codec")}>
+                  {(["vp8", "auto", "h264"] as const).map(mode => (
+                    <Chip key={mode} selected={displayedVideoCodecMode === mode}
+                      disabled={phase === "starting" || phase === "live"}
+                      title={mode === "auto"
+                        ? resolvedVideoCodec
+                          ? `${t("host.advanced.codec.auto")} · ${resolvedVideoCodec.toUpperCase()}`
+                          : `${t("host.advanced.codec.auto")} · ${t("host.advanced.codec.autoHint")}`
+                        : `${mode.toUpperCase()} · ${t(mode === "vp8" ? "host.advanced.codec.vp8Hint" : "host.advanced.codec.h264Hint")}`}
+                      hint="hint-codec" onClick={() => changeVideoCodecMode(mode)}>
+                      {mode === "auto" && !vis ? t("host.advanced.codec.auto") : mode.toUpperCase()}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
             </>}
             audio={<>
-              <AudioBitrateControl value={screenAudioBitrate(advancedQuality.maxAudioBitrate)}
-                max={audioBitrateCeiling} disabled={phase === "starting" || switchingSource}
-                onChange={changeMaxAudioBitrate} />
               {phase === "live" && nativeActive && nativeSourceSelectionRef.current?.target.kind === "display" &&
                 nativeClientRef.current?.health.nativeMedia.microphone && nativeClientRef.current.health.nativeMedia.processAudioExclusion ? (
                 <div className="lr-door-group lr-source-audio-settings">
@@ -3867,89 +3955,48 @@ export function HostPage({
                   onVoiceProcessing={enabled => void changeMicrophone(microphoneEnabled, microphoneDevices.browser, enabled)}
                 />
               ) : null}
+              <AudioBitrateControl value={screenAudioBitrate(advancedQuality.maxAudioBitrate)}
+                max={audioBitrateCeiling} disabled={phase === "starting" || switchingSource}
+                onChange={changeMaxAudioBitrate} />
             </>}
-            technical={<>
-              <div className="lr-door-group">
-                <span
-                  className="lr-door-glyph"
-                >
-                  <Glyph name="branch" size={19} />
-                  <Cap k="host.advanced.route" />
-                </span>
-                <div className="lr-row-group">
-                  {sfuOnly ? <SwitchItem checked disabled locked
-                    onChange={() => {}}
-                    label={t("host.advanced.route.sfuOnly")}
-                    note={t("host.advanced.route.sfuOnlyHint")}
-                    hint="hint-route-sfu"
-                  /> : <>
-                    <SwitchItem
-                      checked={routePolicy.topologyOptimization}
-                      disabled={phase === "starting" || phase === "live"}
-                      onChange={(checked) =>
-                        changeRoutePolicy({ topologyOptimization: checked })
-                      }
-                      label={t("host.advanced.route.topo")}
-                      note={t("host.advanced.route.topoHint")}
-                      hint="hint-topology"
-                    />
-                    <SwitchItem
-                      checked={routePolicy.peerOnly}
-                      disabled={
-                        !sfuAvailable || phase === "starting" || phase === "live"
-                      }
-                      locked={!sfuAvailable}
-                      onChange={(checked) =>
-                        changeRoutePolicy({ peerOnly: checked })
-                      }
-                      label={t("host.advanced.route.peerOnly")}
-                      note={t(
-                        sfuAvailable
-                          ? "host.advanced.route.peerOnlyHint"
-                          : "host.advanced.route.peerOnlyRequired",
-                      )}
-                      hint={sfuAvailable ? "hint-route-p2p" : "hint-route-p2p-required"}
-                    />
-                  </>}
-                </div>
+            connection={
+              <div className="lr-row-group" role="group" aria-label={t("host.advanced.route")}>
+                {sfuOnly ? <SwitchItem checked disabled locked
+                  onChange={() => {}}
+                  label={t("host.advanced.route.sfuOnly")}
+                  note={t("host.advanced.route.sfuOnlyHint")}
+                  hint="hint-route-sfu"
+                /> : <>
+                  <SwitchItem
+                    checked={routePolicy.topologyOptimization}
+                    disabled={phase === "starting" || phase === "live"}
+                    onChange={(checked) =>
+                      changeRoutePolicy({ topologyOptimization: checked })
+                    }
+                    label={t("host.advanced.route.topo")}
+                    note={t("host.advanced.route.topoHint")}
+                    hint="hint-topology"
+                  />
+                  <SwitchItem
+                    checked={routePolicy.peerOnly}
+                    disabled={
+                      !sfuAvailable || phase === "starting" || phase === "live"
+                    }
+                    locked={!sfuAvailable}
+                    onChange={(checked) =>
+                      changeRoutePolicy({ peerOnly: checked })
+                    }
+                    label={t("host.advanced.route.peerOnly")}
+                    note={t(
+                      sfuAvailable
+                        ? "host.advanced.route.peerOnlyHint"
+                        : "host.advanced.route.peerOnlyRequired",
+                    )}
+                    hint={sfuAvailable ? "hint-route-p2p" : "hint-route-p2p-required"}
+                  />
+                </>}
               </div>
-              <div className="lr-door-group">
-                <span
-                  className="lr-door-glyph"
-                >
-                  <Glyph name="puzzle" size={19} />
-                  <Cap k="host.advanced.codec" />
-                </span>
-                <div
-                  className="lr-row-group"
-                  role="group"
-                  aria-label={t("host.advanced.codec")}
-                >
-                  {(["vp8", "auto", "h264"] as const).map((mode) => (
-                    <Chip
-                      key={mode}
-                      selected={displayedVideoCodecMode === mode}
-                      disabled={phase === "starting" || phase === "live"}
-                      title={
-                        mode === "auto"
-                          ? resolvedVideoCodec
-                            ? `${t("host.advanced.codec.auto")} · ${resolvedVideoCodec.toUpperCase()}`
-                            : `${t("host.advanced.codec.auto")} · ${t("host.advanced.codec.autoHint")}`
-                          : `${mode.toUpperCase()} · ${t(
-                              mode === "vp8"
-                                ? "host.advanced.codec.vp8Hint"
-                                : "host.advanced.codec.h264Hint",
-                            )}`
-                      }
-                      hint="hint-codec"
-                      onClick={() => changeVideoCodecMode(mode)}
-                    >
-                      {mode.toUpperCase()}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-            </>}
+            }
           />
           <RoomInteractions session={room ? interactionSession : null}
             view="host"
@@ -4023,7 +4070,7 @@ export function HostPage({
                         aria-invalid={displayNameError ? "true" : undefined}
                         onChange={(event) => {
                           setDisplayNameDraft(event.target.value);
-                          setDisplayNameError(null);
+                          setDisplayNameError(false);
                         }}
                       />
                     </span>
@@ -4040,7 +4087,7 @@ export function HostPage({
                       hint="hint-close"
                       onClick={() => {
                         setDisplayNameDraft(displayName);
-                        setDisplayNameError(null);
+                        setDisplayNameError(false);
                         setEditingDisplayName(false);
                       }}
                     />
@@ -4058,7 +4105,7 @@ export function HostPage({
                       hint="hint-rename"
                       onClick={() => {
                         setDisplayNameDraft(displayName);
-                        setDisplayNameError(null);
+                        setDisplayNameError(false);
                         setEditingDisplayName(true);
                       }}
                     />
@@ -4068,7 +4115,7 @@ export function HostPage({
                   <Pill
                     icon="alert"
                     tone="bad"
-                    label={displayNameError}
+                    label={t("host.nameError")}
                     alert
                     comic="name-invalid"
                   />
@@ -4178,7 +4225,6 @@ export function HostPage({
                   className="lr-toggle"
                   role="group"
                   aria-label={t("host.policy")}
-                  data-selected={activeCodeEntryPolicy}
                 >
                   <Tooltip kind="hint-admission-code"
                     text={vis ? undefined : `${t("host.policy.open")} · ${t("host.policy.openHint")}`}>

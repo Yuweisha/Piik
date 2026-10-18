@@ -3,11 +3,13 @@ package nativeviewer
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/TNTcraftHIM/Piik/internal/app/mediaedge"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativecapture"
+	"github.com/TNTcraftHIM/Piik/internal/media/inputroute"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -37,6 +39,18 @@ type sessionEdge struct {
 	sourceConnectionID string
 }
 
+type sessionReceiver struct {
+	*mediaedge.Receiver
+	input *inputroute.Relay
+}
+
+func (receiver *sessionReceiver) Close() error {
+	if receiver.input != nil {
+		receiver.input.Close()
+	}
+	return receiver.Receiver.Close()
+}
+
 // One current upstream and one prepared route may overlap during a handoff.
 const receiverCapacity = 2
 
@@ -52,7 +66,7 @@ type Session struct {
 	relay        *mediaedge.RelayOptions
 
 	mu        sync.Mutex
-	receivers map[string]*mediaedge.Receiver
+	receivers map[string]*sessionReceiver
 	edges     map[string]sessionEdge
 	profile   *nativecapture.VideoProfile
 	closed    bool
@@ -77,7 +91,7 @@ func Start(parent context.Context, options Options) (*Session, error) {
 	session := &Session{
 		shareID: options.ShareID, edgeCapacity: options.EdgeCapacity,
 		engine: engine, events: options.Events, ctx: ctx, cancel: cancel, relay: options.Relay,
-		receivers: make(map[string]*mediaedge.Receiver),
+		receivers: make(map[string]*sessionReceiver),
 		edges:     make(map[string]sessionEdge),
 	}
 	go session.runQuality()
@@ -153,13 +167,20 @@ func (session *Session) AcceptOffer(
 		}
 	}
 	session.CloseReceiver(connectionID)
-	receiver, answer, err := session.engine.NewReceiver(mediaedge.ReceiverOptions{
+	var input *inputroute.Relay
+	var onDataChannel func(*webrtc.DataChannel)
+	if strings.Contains(offer.SDP, "\nm=application ") {
+		input = inputroute.New(nil)
+		onDataChannel = input.AttachUp
+	}
+	mediaReceiver, answer, err := session.engine.NewReceiver(mediaedge.ReceiverOptions{
 		Offer:         offer,
 		ICEServers:    iceServers,
 		EdgeCapacity:  session.edgeCapacity,
 		Relay:         session.relay,
 		PunchedSocket: punchedSocket,
 		Events: mediaedge.ReceiverEvents{
+			DataChannel: onDataChannel,
 			LocalCandidate: func(candidate *webrtc.ICECandidateInit, current func() bool) {
 				session.emit(Event{
 					Current: current,
@@ -168,6 +189,9 @@ func (session *Session) AcceptOffer(
 				})
 			},
 			ConnectionState: func(state webrtc.PeerConnectionState, pair *mediaedge.SelectedPair, current func() bool) {
+				if input != nil {
+					input.SetUpAvailable(state == webrtc.PeerConnectionStateConnected)
+				}
 				session.emit(Event{
 					Current: current,
 					Type:    "edge-state", ShareID: session.shareID,
@@ -187,8 +211,12 @@ func (session *Session) AcceptOffer(
 		},
 	})
 	if err != nil {
+		if input != nil {
+			input.Close()
+		}
 		return OfferResult{}, err
 	}
+	receiver = &sessionReceiver{Receiver: mediaReceiver, input: input}
 	session.mu.Lock()
 	if session.closed || session.receivers[connectionID] != nil || len(session.receivers) >= receiverCapacity {
 		session.mu.Unlock()
@@ -281,6 +309,9 @@ func (session *Session) prepareEdge(
 				})
 			},
 			ConnectionState: func(state webrtc.PeerConnectionState, pair *mediaedge.SelectedPair) {
+				if receiver.input != nil && (state == webrtc.PeerConnectionStateDisconnected || state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed) {
+					receiver.input.LoseDown(connectionID, nil)
+				}
 				session.emit(Event{
 					Type: "edge-state", ShareID: session.shareID,
 					ConnectionID: connectionID, State: state.String(),
@@ -312,6 +343,14 @@ func (session *Session) prepareEdge(
 	}
 	session.mu.Unlock()
 	var offer webrtc.SessionDescription
+	if receiver.input != nil {
+		channel, channelErr := edge.OpenDataChannel(inputroute.Label)
+		if channelErr != nil {
+			session.CloseEdge(connectionID)
+			return webrtc.SessionDescription{}, channelErr
+		}
+		receiver.input.AttachDown(connectionID, channel)
+	}
 	if local {
 		offer, err = edge.CreateLocalOffer(session.ctx, localOfferID, false)
 	} else {
@@ -379,7 +418,7 @@ func (session *Session) Close() error {
 		return nil
 	}
 	session.closed = true
-	receivers := make([]*mediaedge.Receiver, 0, len(session.receivers))
+	receivers := make([]*sessionReceiver, 0, len(session.receivers))
 	for _, receiver := range session.receivers {
 		receivers = append(receivers, receiver)
 	}
@@ -387,7 +426,7 @@ func (session *Session) Close() error {
 	for _, owned := range session.edges {
 		edges = append(edges, owned.edge)
 	}
-	session.receivers = make(map[string]*mediaedge.Receiver)
+	session.receivers = make(map[string]*sessionReceiver)
 	session.edges = make(map[string]sessionEdge)
 	session.mu.Unlock()
 	session.cancel()
@@ -400,7 +439,7 @@ func (session *Session) Close() error {
 	return session.engine.Close()
 }
 
-func (session *Session) receiver(connectionID string) *mediaedge.Receiver {
+func (session *Session) receiver(connectionID string) *sessionReceiver {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	if session.closed {

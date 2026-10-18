@@ -1,25 +1,53 @@
 .lr-room-interactions { position: relative; width: min(960px, 100%); margin: 0 auto; }
 .lr-interaction-couch { position: relative; }
+.lr-interaction-conversation { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; --gift-arc: 40px; --gift-lift: 32px; }
+.lr-interaction-conversation[hidden] { display: none; }
+.lr-interaction-conversation .lr-reaction-flight { overflow: hidden; }
+/* The picker belongs to the composer; opening it never moves the input or reading position. */
+.lr-interaction-people-scroll { overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 4px 0; margin-bottom: 4px; border-bottom: 1px solid var(--wall-2); }
+.lr-interaction-people { display: flex; gap: 4px; width: max-content; min-width: 100%; }
+.lr-interaction-people > span { display: flex; flex: none; max-width: 148px; }
+.lr-interaction-people .lr-comic-tip-wrap { width: 100%; }
+.lr-interaction-people .lr-pawn { display: flex; width: 100%; min-width: 0; min-height: 44px; gap: 6px; padding: 6px 10px; border-radius: 14px; transition: transform 150ms var(--spring), background-color 140ms ease; }
+.lr-interaction-people .lr-pawn.is-you::after { display: none; }
+.lr-interaction-people .lr-person { flex: none; width: 22px; height: 28px; }
+.lr-interaction-panel .lr-interaction-people .lr-pawn-name { min-width: 0; max-width: 100%; margin: 0; padding: 0; font-size: 12px; font-weight: 600; line-height: 1.4; background: none; color: inherit; box-shadow: none; }
+.lr-interaction-panel .lr-interaction-people .lr-pawn:is(:hover, :focus-visible) { background: var(--control-hover); }
+.lr-interaction-people .lr-pawn:focus-visible { outline-offset: -3px; }
+.lr-interaction-panel .lr-interaction-people .lr-pawn[aria-pressed="true"] { background: var(--control-selected); color: var(--control-selected-ink); box-shadow: inset 0 0 0 1px var(--action); }
+.lr-interaction-picker { flex: 0 1 auto; max-height: calc(100% - 60px); padding-block: 4px 6px; border-top: 1px solid var(--wall-2); }
+.lr-interaction-picker[hidden] { display: none; }
+.lr-interaction-picker:not([hidden]) { transform-origin: center bottom; animation: lr-floating-enter 150ms var(--spring); }
+.lr-interaction-back { flex: none; padding: 14px 0 0; }
+.lr-interaction-back .lr-btn { min-width: 36px; height: 36px; padding: 0 10px; gap: 4px; }
+.lr-interaction-activity { position: absolute; z-index: 2; right: 4px; bottom: 8px; max-width: calc(100% - 8px); padding-top: 68px; pointer-events: none; --gift-arc: 30px; --gift-lift: 30px; }
+.lr-interaction-activity-people, .lr-interaction-activity-people > span { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lr-interaction-activity-people { padding: 8px 12px; border: 1px solid var(--control-edge); border-radius: 18px; background: color-mix(in srgb, var(--paper) 96%, transparent); box-shadow: var(--control-shadow); }
+.lr-interaction-activity-people > span > svg { flex: none; color: var(--muted); }
+.lr-interaction-activity-person { display: grid; justify-items: center; gap: 4px; min-width: 0; width: 76px; }
+.lr-interaction-activity-person .lr-person { width: 28px; height: 34px; }
+.lr-interaction-activity-person > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
 .lr-couch-footer.has-action { gap: 4px; width: fit-content; margin: 0 auto; padding: 3px; background: var(--paper); border: 1px solid var(--control-edge); border-radius: 18px; color: var(--ink); }
 .lr-couch-footer.has-action .lr-couch-count { padding: 0 12px 0 9px; border: 0; border-right: 1px solid var(--control-edge); border-radius: 0; background: transparent; color: var(--muted); }
 .lr-interaction-chat-toggle { display: flex; position: relative; }
-.lr-interaction-unread { align-self: flex-start; margin: -4px 0 0 -8px; z-index: 1; min-width: 22px; padding: 2px 6px; border-radius: 20px; color: var(--paper); background: var(--action); font: 700 11px var(--mono); text-align: center; }
-.lr-chat-compose, .lr-chat-footer { flex-shrink: 0; }
+.lr-interaction-unread { align-self: flex-start; margin: -4px 0 0 -8px; z-index: 1; min-width: 22px; padding: 2px 6px; border-radius: 20px; color: var(--action-ink); background: var(--action-deep); font: 700 11px var(--mono); text-align: center; }
+.lr-chat-compose { flex-shrink: 0; }
 .lr-interaction-effects { display: flex; align-items: center; gap: 8px; min-height: 40px; width: fit-content; margin-top: 8px; font-size: 12px; font-weight: 400; color: var(--muted); }
-.lr-chat-history { position: relative; flex: 1; min-height: 96px; }
-.lr-chat-log { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; padding: 18px 2px; }
-.lr-chat-latest { position: absolute; bottom: 8px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 6px; min-height: 36px; max-width: calc(100% - 16px); padding: 6px 12px; border: 1px solid var(--control-edge); border-radius: 18px; background: var(--paper); color: var(--ink); box-shadow: var(--control-shadow); font-size: 12px; white-space: nowrap; }
+.lr-chat-history { position: relative; flex: 1; min-height: 0; }
+.lr-chat-log { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; padding: 16px 2px; }
+.lr-chat-latest { position: absolute; z-index: 6; bottom: 8px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 6px; min-height: 36px; max-width: calc(100% - 16px); padding: 6px 12px; border: 1px solid var(--control-edge); border-radius: 18px; background: var(--paper); color: var(--ink); box-shadow: var(--control-shadow); font-size: 12px; white-space: nowrap; }
 .lr-chat-latest:is(:hover, :focus-visible) { background: var(--control-hover); }
 .lr-chat-empty { display: grid; place-content: center; justify-items: center; gap: 10px; height: 100%; color: var(--muted); font-size: 13px; }
 .lr-chat-empty p { margin: 0; }
-.lr-chat-welcome { position: relative; display: flex; gap: 4px; padding-top: 20px; }
-.lr-chat-welcome > svg:last-child { position: absolute; top: 0; right: 0; color: var(--action); }
-.lr-chat-message { position: relative; display: flex; padding: 0 20px 0 34px; margin: 12px 0 0; }
+.lr-chat-message { position: relative; display: flex; padding: 0 20px 0 46px; margin: 12px 0 0; }
 .lr-chat-message:first-child { margin-top: 0; }
-.lr-chat-message.is-self { justify-content: flex-end; padding: 0 34px 0 20px; }
+.lr-chat-message.is-self { justify-content: flex-end; padding: 0 46px 0 20px; }
 .lr-chat-message.is-continuation { margin-top: 4px; }
-.lr-chat-avatar { position: absolute; top: 1px; left: 0; }
+.lr-chat-avatar { position: absolute; top: 1px; left: 0; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: inherit; }
 .lr-chat-avatar .lr-person { width: 28px; height: 34px; }
+button.lr-chat-avatar { cursor: pointer; transition: background-color 140ms ease; }
+button.lr-chat-avatar:is(:hover, :focus-visible) { background: var(--control-hover); }
+button.lr-chat-avatar:focus-visible { outline-offset: -3px; }
 .lr-chat-message.is-self .lr-chat-avatar { left: auto; right: 0; }
 .lr-chat-bubble { min-width: 0; }
 .lr-chat-author { display: block; margin: 0 4px 5px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
@@ -27,53 +55,53 @@
 .lr-chat-message p { padding: 9px 13px; margin: 0; border-radius: 4px 16px 16px; background: var(--wall); overflow-wrap: anywhere; white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
 .lr-chat-message.is-self p { background: color-mix(in srgb, var(--action) 11%, var(--paper)); border-radius: 16px 4px 16px 16px; }
 .lr-chat-message.is-continuation p { border-radius: 16px; }
-.lr-chat-compose { display: flex; align-items: center; gap: 4px; margin-top: 8px; padding: 4px; border: 1px solid var(--control-edge); border-radius: 20px; background: var(--wall); }
+.lr-chat-compose { margin-top: 12px; padding: 6px; border: 1px solid var(--control-edge); border-radius: 20px; background: var(--wall); }
 .lr-chat-compose:has(input:focus-visible) { outline: 3px solid var(--action); outline-offset: 2px; }
-.lr-chat-compose > input { min-width: 0; flex: 1; width: 0; height: 44px; border: 0; outline: none; border-radius: 14px; padding: 0 10px; background: transparent; color: var(--ink); font-size: 16px; }
-.lr-chat-compose .lr-btn { flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 15px; }
-.lr-chat-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 40px; margin-top: 8px; padding-right: 12px; color: var(--muted); font-size: 11px; line-height: 1.5; }
-.lr-chat-actions { display: flex; flex: none; align-items: center; gap: 6px; }
-.lr-chat-footer .lr-chat-overlay-toggle { flex: none; }
-.lr-chat-footer .lr-btn { min-height: 36px; padding: 0 8px; }
-.lr-chat-history[hidden], .lr-chat-compose[hidden] { display: none; }
-.lr-chat-settings { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 18px 2px; }
+.lr-chat-input-row { display: flex; align-items: center; gap: 6px; }
+.lr-chat-input-row > input { min-width: 0; flex: 1; width: 0; height: 44px; border: 0; outline: none; border-radius: 14px; padding: 0 10px; background: transparent; color: var(--ink); font-size: 16px; }
+.lr-chat-input-row .lr-btn { flex: none; width: 40px; height: 40px; min-width: 40px; padding: 0; border-radius: 14px; }
+.lr-chat-tools { display: flex; align-items: center; gap: 2px; padding-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.lr-chat-tools .lr-btn { flex: none; min-width: 36px; height: 36px; padding: 0 8px; gap: 6px; border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); }
+.lr-chat-tools .lr-btn:is(:hover, :focus-visible) { background: var(--control-hover); color: var(--ink); }
+.lr-chat-tools .lr-btn.is-on { background: var(--control-selected); color: var(--control-selected-ink); }
+.lr-chat-tools .lr-chat-count { padding: 0 4px; }
+.lr-chat-compose[hidden] { display: none; }
+.lr-chat-settings { flex: 1; padding-block: 18px; }
 .lr-chat-settings > p { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.lr-chat-setting { margin-bottom: 22px; }
-.lr-chat-setting > label { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 28px; font-size: 13px; }
-.lr-chat-setting output { color: var(--muted); font: 12px var(--mono); }
-.lr-chat-setting > .lr-comic-tip-wrap { display: flex; width: 100%; }
-.lr-chat-setting input[type="range"] { width: 100%; min-height: 40px; margin: 0; accent-color: var(--action); cursor: pointer; }
+.lr-chat-settings > .lr-chat-overlay-settings { margin-bottom: 22px; }
 .lr-chat-export { display: grid; justify-items: start; gap: 8px; padding-top: 16px; border-top: 1px solid var(--wall-2); }
+.lr-chat-export > p { margin: 0 0 6px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .lr-chat-export small { color: var(--muted); font-size: 12px; line-height: 1.6; }
-.lr-chat-footer .lr-interaction-status { flex: 1 1 140px; min-width: 0; min-height: 0; margin: 0; overflow-wrap: anywhere; }
 .lr-chat-count { flex: none; margin-left: auto; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.lr-interaction-status { display: flex; align-items: center; gap: 6px; min-height: 24px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+.lr-interaction-status { display: flex; flex: none; align-items: center; gap: 6px; min-height: 24px; margin-top: 6px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.lr-interaction-status > svg { flex: none; }
 .lr-person-menu { transform-origin: center bottom; }
-.lr-person-menu-body { flex: 1; min-height: 0; padding-top: 12px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-.lr-person-menu-target { margin-bottom: 10px; }
-.lr-person-menu-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.lr-person-menu-name > span:last-child { min-width: 0; }
+.lr-person-menu-body { flex: 1; padding-block: 12px 6px; }
+.lr-person-menu-target { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.lr-person-menu-name { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.lr-person-menu-name > span:last-child { flex: 1; min-width: 0; }
+.lr-person-menu-name .lr-comic-tip-wrap { width: 100%; min-width: 0; }
 .lr-person-menu-name small { display: block; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.lr-person-menu-name b { display: block; font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.lr-person-menu-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; }
 .lr-person-menu-portrait { display: grid; place-items: center; width: 34px; height: 40px; flex: none; }
 .lr-person-menu-portrait .lr-person { width: 30px; height: 36px; }
-.lr-reaction-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
-.lr-reaction-props { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-:is(.lr-reaction-grid, .lr-reaction-props) button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 4px; border: 1px solid transparent; background: transparent; color: inherit; border-radius: 14px; font-size: 26px; cursor: pointer; touch-action: manipulation; transition: background-color 140ms ease, border-color 140ms ease; }
-.lr-reaction-props button { background: var(--wall); }
-.lr-reaction-props button > span { font-size: 12px; }
-:is(.lr-reaction-grid, .lr-reaction-props) button[aria-disabled="true"] { opacity: .4; cursor: default; }
-:is(.lr-reaction-grid, .lr-reaction-props) button > :first-child { transition: transform 180ms var(--spring); }
-:is(.lr-reaction-grid, .lr-reaction-props) button:is(:hover, :focus-visible):not([aria-disabled="true"]) { background: var(--control-hover); border-color: var(--action); }
-:is(.lr-reaction-grid, .lr-reaction-props) button:is(:hover, :focus-visible):not([aria-disabled="true"]) > :first-child { transform: translateY(-2px); }
-:is(.lr-reaction-grid, .lr-reaction-props) button:active:not([aria-disabled="true"]) > :first-child { transform: scale(.9); }
+.lr-reaction-grid { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; }
+.lr-reaction-grid button { min-width: 0; min-height: 44px; cursor: pointer; touch-action: manipulation; }
+.lr-reaction-option { grid-column: span 2; display: grid; place-items: center; padding: 4px; border: 1px solid transparent; background: transparent; color: inherit; border-radius: 14px; font-size: 26px; line-height: 1; transition: background-color 140ms ease, border-color 140ms ease; }
+.lr-reaction-prop { grid-column: span 7; height: auto; margin-top: 6px; padding: 6px 4px; gap: 4px; border-width: 1px; border-radius: 14px; background: var(--wall); font-size: 12px; font-weight: 600; line-height: 1.3; white-space: normal; text-wrap: balance; }
+.lr-reaction-prop > svg { width: 26px; height: 26px; }
+.lr-reaction-grid button[aria-disabled="true"] { opacity: .4; cursor: default; }
+.lr-reaction-option > :first-child { transition: transform 180ms var(--spring); }
+.lr-reaction-option:is(:hover, :focus-visible):not([aria-disabled="true"]) { background: var(--control-hover); border-color: var(--action); }
+.lr-reaction-option:is(:hover, :focus-visible):not([aria-disabled="true"]) > :first-child { transform: translateY(-2px); }
+.lr-reaction-option:active:not([aria-disabled="true"]) > :first-child { transform: scale(.9); }
 .lr-person-menu-details { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px; margin-top: 8px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
 .lr-person-menu-details:is(:hover, :focus-visible) { background: var(--control-hover); color: var(--ink); }
 .lr-person-menu .lr-interaction-effects { font-size: 11px; }
 /* Theater keeps the same top-layer chat; the picture never changes size. */
 .lr-room.is-theater .lr-room-interactions { position: absolute; top: 12px; right: 12px; z-index: 5; width: auto; }
 .lr-room.is-theater .lr-room-interactions .lr-couch { display: block; width: auto; margin: 0; }
-.lr-room.is-theater .lr-room-interactions :is(.lr-couch-seating, .lr-couch-count, .lr-reaction-flight) { display: none; }
+.lr-room.is-theater .lr-interaction-couch :is(.lr-couch-seating, .lr-couch-count, .lr-reaction-flight) { display: none; }
 .lr-pawn[aria-expanded="true"] { background: color-mix(in srgb, var(--paper) 72%, transparent); border-radius: 18px; }
 .lr-reaction-flight { position: absolute; inset: 0; pointer-events: none; z-index: 5; overflow: visible; }
 /* The path positions the center; percentage translation centers any glyph size. */
@@ -82,16 +110,16 @@
 .lr-reaction-glyph > svg { width: 34px; height: 34px; }
 .is-tomato .lr-reaction-glyph { animation-name: lr-reaction-squash; }
 .is-poop .lr-reaction-glyph { animation-name: lr-reaction-plop; }
-:is(.is-clap, .is-laugh, .is-party) .lr-reaction-glyph { animation-name: lr-reaction-bounce; }
+:is(.is-clap, .is-laugh, .is-clown, .is-party, .is-thumbsup) .lr-reaction-glyph { animation-name: lr-reaction-bounce; }
 :is(.is-heart, .is-wow, .is-fire, .is-star) .lr-reaction-glyph { animation-name: lr-reaction-pulse; }
-.is-eyes .lr-reaction-glyph { animation-name: lr-reaction-peek; }
+:is(.is-eyes, .is-eyeroll) .lr-reaction-glyph { animation-name: lr-reaction-peek; }
 .is-sleep .lr-reaction-glyph { animation-name: lr-reaction-doze; }
 .lr-reaction-accents { position: absolute; left: 50%; top: 50%; translate: -50% -50%; overflow: visible; fill: #efb94e; }
 .lr-reaction-accents.is-heart { fill: #e77585; }
 .lr-reaction-accents.is-tomato { fill: #e96c55; }
 .lr-reaction-accents.is-poop { fill: #b09b82; opacity: .65; }
 .lr-reaction-accents.is-fire { fill: #ed9b58; }
-.lr-reaction-accents:is(.is-eyes, .is-sleep) { fill: var(--muted); }
+.lr-reaction-accents:is(.is-eyes, .is-eyeroll, .is-sleep) { fill: var(--muted); }
 .lr-reaction-accents.is-sleep { font: 700 12px var(--mono); }
 .lr-reaction-accents.is-party > :nth-child(2n) { fill: #65b7aa; }
 .lr-reaction-accents.is-party > :nth-child(3n) { fill: #e77585; }
@@ -124,9 +152,9 @@
 @keyframes lr-reaction-gift {
   0% { opacity: 0; transform: translate(var(--from-x), calc(var(--from-y) - 28px)) scale(.7); }
   12% { opacity: 1; transform: translate(var(--from-x), calc(var(--from-y) - 40px)) scale(.9); }
-  35% { transform: translate(calc((var(--from-x) + var(--to-x)) / 2), calc(min(var(--from-y), var(--to-y)) - 100px)) scale(1); }
-  52%, 80% { opacity: 1; transform: translate(var(--to-x), calc(var(--to-y) - 76px)) scale(1); }
-  100% { opacity: 0; transform: translate(var(--to-x), calc(var(--to-y) - 84px)) scale(.94); }
+  35% { transform: translate(calc((var(--from-x) + var(--to-x)) / 2), calc(min(var(--from-y), var(--to-y)) - var(--gift-arc, 100px))) scale(1); }
+  52%, 80% { opacity: 1; transform: translate(var(--to-x), calc(var(--to-y) - var(--gift-lift, 76px))) scale(1); }
+  100% { opacity: 0; transform: translate(var(--to-x), calc(var(--to-y) - var(--gift-lift, 76px) - 8px)) scale(.94); }
 }
 @keyframes lr-reaction-wiggle {
   0%, 52%, 86%, 100% { transform: none; }
@@ -188,19 +216,18 @@
   72%, 100% { opacity: 0; transform: translate(var(--spark-x), var(--spark-y)) rotate(var(--spark-turn)) scale(.6); }
 }
 [data-comic-reduced-motion] .lr-reaction-projectile { animation: none; transform: translate(var(--to-x), calc(var(--to-y) - 33px)); }
-[data-comic-reduced-motion] .is-gift .lr-reaction-projectile { transform: translate(var(--to-x), calc(var(--to-y) - 76px)); }
+[data-comic-reduced-motion] .is-gift .lr-reaction-projectile { transform: translate(var(--to-x), calc(var(--to-y) - var(--gift-lift, 76px))); }
 [data-comic-reduced-motion] .lr-reaction-body { transform: none !important; }
 [data-comic-reduced-motion] .lr-reaction-glyph { animation: none; }
 [data-comic-reduced-motion] .lr-reaction-accents { display: none; }
-[data-comic-reduced-motion] :is(.lr-reaction-grid, .lr-reaction-props) button > :first-child { transition: none; transform: none !important; }
+[data-comic-reduced-motion] .lr-reaction-grid button > :first-child { transition: none; transform: none !important; }
+[data-comic-reduced-motion] .lr-interaction-picker { animation: none; }
 @media (prefers-reduced-motion: reduce) {
+  .lr-interaction-picker { animation: none !important; }
   .lr-reaction-projectile { animation: none; transform: translate(var(--to-x), calc(var(--to-y) - 33px)); }
-  .is-gift .lr-reaction-projectile { transform: translate(var(--to-x), calc(var(--to-y) - 76px)); }
+  .is-gift .lr-reaction-projectile { transform: translate(var(--to-x), calc(var(--to-y) - var(--gift-lift, 76px))); }
   .lr-reaction-body { transform: none !important; }
   .lr-reaction-glyph { animation: none; }
   .lr-reaction-accents { display: none; }
-  :is(.lr-reaction-grid, .lr-reaction-props) button > :first-child { transition: none; transform: none !important; }
-}
-@media (max-width: 420px) {
-  .lr-chat-compose { gap: 6px; }
+  .lr-reaction-grid button > :first-child { transition: none; transform: none !important; }
 }

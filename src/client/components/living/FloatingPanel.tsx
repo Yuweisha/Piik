@@ -2,12 +2,12 @@ import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode, t
 import { createPortal } from "react-dom";
 import { useCopy } from "../../ui/copy";
 import { Glyph, type GlyphName } from "../../ui/icons";
-import { openPanelWindow, panelWindowAPI, SurfaceDocument } from "../../ui/panel-window";
+import { usePanelWindow, panelWindowAPI, SurfaceDocument } from "../../ui/panel-window";
 import { Tooltip } from "./Tooltip";
 import "./floating-panel.css";
 
-const PANEL_SIZES = { default: { width: 420, height: 560 }, large: { width: 560, height: 680 } };
-const COMPACT_SIZES = { default: { width: 304, height: undefined }, large: { width: 380, height: 460 } };
+const PANEL_SIZE = { width: 420, height: 560 };
+const COMPACT_SIZE = { width: 304, height: undefined };
 type PanelGesture = "move" | "nw" | "se";
 type PanelChange = { x: number; y: number } | { rect: DOMRect; corner: "nw" | "se"; dx: number; dy: number };
 
@@ -20,23 +20,12 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
 }) {
   const { t, vis } = useCopy();
   const [open, setOpen] = useState(false);
-  const [surfaceDocument, setSurfaceDocument] = useState<Document | null>(null);
-  const detached = Boolean(surfaceDocument && surfaceDocument !== document);
-  const [openingWindow, setOpeningWindow] = useState(false);
-  const [windowFailed, setWindowFailed] = useState(false);
-  const [container] = useState(() => {
-    if (!detachable || typeof document === "undefined") return null;
-    const node = document.createElement("div");
-    node.style.display = "contents";
-    return node;
-  });
-  const slot = useRef<HTMLSpanElement>(null);
-  const lifetime = useRef<AbortController | null>(null);
+  const panelWindow = usePanelWindow(detachable);
+  const { container, slot, surfaceDocument, detached } = panelWindow;
   const panelRef = useRef<HTMLElement>(null);
-  const positionMenu = useRef<HTMLDetailsElement>(null);
-  const sizes = compact ? COMPACT_SIZES : PANEL_SIZES;
+  const defaultSize = compact ? COMPACT_SIZE : PANEL_SIZE;
   const position = useRef({ x: 1, y: 1 });
-  const preferredSize = useRef(sizes.default);
+  const preferredSize = useRef(defaultSize);
   const placePanel = useRef<((change?: PanelChange) => void) | null>(null);
   const gesture = useRef<{ pointerId: number; x: number; y: number; rect: DOMRect; kind: PanelGesture } | null>(null);
   const suppressDragClick = useRef(false);
@@ -47,34 +36,29 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
   };
 
   useLayoutEffect(() => {
-    if (!container || !slot.current) return;
-    slot.current.append(container);
-    return () => { lifetime.current?.abort(); container.remove(); };
-  }, [container]);
+    const panel = panelRef.current;
+    if (!panel) return;
+    const owner = panel.ownerDocument;
+    const hideOutsideFullscreen = () => {
+      if (!owner.fullscreenElement || owner.fullscreenElement.contains(panel)) return false;
+      // A room tool outside the fullscreen subtree must not cover the picture.
+      // Adoption already hides its popover, so report the closed state even
+      // when the browser has no further toggle event to deliver on return.
+      panel.hidePopover();
+      setOpen(false);
+      onOpenChange?.(false, owner);
+      return true;
+    };
+    // Adoption removes native popovers from the old document's top layer.
+    if (surfaceDocument && !hideOutsideFullscreen()) panel.showPopover();
+    owner.addEventListener("fullscreenchange", hideOutsideFullscreen);
+    return () => owner.removeEventListener("fullscreenchange", hideOutsideFullscreen);
+  }, [surfaceDocument]);
 
   useLayoutEffect(() => {
     if (!surfaceDocument) return;
-    // Adoption removes native popovers from the old document's top layer.
-    panelRef.current?.showPopover();
     if (surfaceDocument !== document) surfaceDocument.title = `${title} · Piik`;
   }, [surfaceDocument, title]);
-
-  async function detach() {
-    if (!container || openingWindow) return;
-    const controller = new AbortController();
-    lifetime.current = controller;
-    const { signal } = controller;
-    setOpeningWindow(true);
-    setWindowFailed(false);
-    if (positionMenu.current) positionMenu.current.open = false;
-    try {
-      await openPanelWindow(container, signal, owner => {
-        setSurfaceDocument(owner);
-        onOpenChange?.(true, owner);
-      });
-    } catch { if (!signal.aborted) setWindowFailed(true); }
-    finally { if (!signal.aborted) setOpeningWindow(false); }
-  }
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -100,14 +84,12 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
 
   function startGesture(event: PointerEvent<HTMLElement>, kind: PanelGesture) {
     if (!event.isPrimary || event.button !== 0 || !panelRef.current) return;
-    if (kind === "move" && (event.target as Element).closest("button, .lr-floating-positions")) return;
+    if (kind === "move" && (event.target as Element).closest("button")) return;
     panelRef.current.getAnimations().forEach(animation => animation.finish());
     gesture.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY,
       rect: panelRef.current.getBoundingClientRect(), kind };
-    // Capture on the summary preserves its native click/keyboard activation.
-    const handle = (event.target as Element).closest<HTMLElement>("summary") ?? event.currentTarget;
-    handle.focus({ preventScroll: true });
-    handle.setPointerCapture(event.pointerId);
+    event.currentTarget.focus({ preventScroll: true });
+    event.currentTarget.setPointerCapture(event.pointerId);
   }
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -156,9 +138,8 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
       const top = (viewport?.offsetTop ?? 0) + 12;
       const bottom = top + (viewport?.height ?? document.documentElement.clientHeight) - 24;
       const below = anchor.bottom + 8;
-      const headroom = anchor.top - top >= panel.offsetHeight + 136 ? 128 : 0;
       place({ x: anchor.x + anchor.width / 2 - panel.offsetWidth / 2,
-        y: below + panel.offsetHeight <= bottom ? below : anchor.top - panel.offsetHeight - 8 - headroom });
+        y: below + panel.offsetHeight <= bottom ? below : anchor.top - panel.offsetHeight - 8 });
     }
     viewport?.addEventListener("resize", resize);
     viewport?.addEventListener("scroll", resize);
@@ -178,7 +159,7 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
 
   const panel = <SurfaceDocument.Provider value={surfaceDocument}>
     <section id={id} ref={panelRef} popover="manual" role="dialog" tabIndex={-1} className={`lr-floating-surface lr-floating-panel ${className}`}
-      style={sizes.default}
+      style={defaultSize}
       aria-label={title}
       onPointerDownCapture={() => { suppressDragClick.current = false; }}
       onPointerMove={event => {
@@ -210,10 +191,7 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
           // Opening to read must not summon a phone's keyboard.
           event.currentTarget.focus({ preventScroll: true });
         } else {
-          lifetime.current?.abort();
-          setOpeningWindow(false);
-          setWindowFailed(false);
-          if (positionMenu.current) positionMenu.current.open = false;
+          panelWindow.close();
           if (event.currentTarget.contains(document.activeElement)) focusTrigger();
         }
       }}>
@@ -230,40 +208,10 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
         <span className="lr-floating-title">{!detached && <Glyph name="grip" size={17} />}
           {vis ? <Glyph name={icon} size={18} /> : <b>{title}</b>}</span>
         <span id={`${id}-move-hint`} className="visually-hidden">{t("floating.moveHint")}</span>
-        {!detached && <details ref={positionMenu} className="lr-floating-position"
-          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) event.currentTarget.open = false; }}
-          onKeyDown={event => {
-            if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing || !event.currentTarget.open) return;
-            event.stopPropagation(); event.currentTarget.open = false;
-            event.currentTarget.querySelector("summary")?.focus();
-          }}>
-          <summary aria-label={t("floating.position")}><Glyph name="move" size={16} />{!vis && <span>{t("floating.position")}</span>}</summary>
-          <div className="lr-floating-positions" role="group" aria-label={t("floating.position")}>
-            {(["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).map((corner, index) => {
-              const x = index % 2, y = Math.floor(index / 2);
-              return <button key={corner} type="button" aria-label={t(`floating.position.${corner}`)} onClick={() => {
-                position.current = { x, y }; placePanel.current?.();
-                if (positionMenu.current) { positionMenu.current.open = false; positionMenu.current.querySelector("summary")?.focus(); }
-              }}>
-                <svg viewBox="0 0 28 22" width="28" height="22" aria-hidden="true">
-                  <rect x="1" y="1" width="26" height="20" rx="4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                  <rect x={x ? 16 : 4} y={y ? 12 : 4} width="8" height="6" rx="1.5" fill="currentColor" />
-                </svg>{!vis && <span>{t(`floating.position.${corner}`)}</span>}
-              </button>;
-            })}
-            {(["default", "large"] as const).map(size => <button key={size} type="button" className="lr-floating-size"
-              onClick={() => {
-                preferredSize.current = sizes[size]; placePanel.current?.();
-                if (positionMenu.current) { positionMenu.current.open = false; positionMenu.current.querySelector("summary")?.focus(); }
-              }} aria-label={t(`floating.size.${size}`)}>
-              <Glyph name={size === "large" ? "expand" : "contract"} size={18} />{!vis && <span>{t(`floating.size.${size}`)}</span>}
-            </button>)}
-          </div>
-        </details>}
         {detachable && !detached && panelWindowAPI(typeof window === "undefined" ? null : window) &&
-          <Tooltip kind="hint-chat-detach" place="below" text={vis ? undefined : t("floating.detach")}>
-            <button type="button" className="lr-popover-close" disabled={openingWindow}
-              aria-label={t("floating.detach")} onClick={() => { void detach(); }}>
+          <Tooltip kind="hint-window-detach" place="below" text={vis ? undefined : t("floating.detach")}>
+            <button type="button" className="lr-popover-close" disabled={panelWindow.opening}
+              aria-label={t("floating.detach")} onClick={() => { void panelWindow.open(); }}>
               <Glyph name="pip" size={18} />
             </button>
           </Tooltip>}
@@ -271,7 +219,7 @@ export function FloatingPanel({ id, trigger, title, icon, compact = false, ancho
           panelRef.current?.hidePopover(); focusTrigger();
         }}><Glyph name="x" size={16} /></button>}
       </header>
-      {windowFailed && <p className="lr-floating-error" role="status">{t("floating.detachFailed")}</p>}
+      {panelWindow.failed && <p className="lr-floating-error" role="status">{t("floating.detachFailed")}</p>}
       {children}
       {!detached && (["nw", "se"] as const).map(corner => <span key={corner} className={`lr-floating-resize is-${corner}`}
         role="group" tabIndex={0} aria-label={t("floating.resize")} aria-describedby={`${id}-resize-hint`}

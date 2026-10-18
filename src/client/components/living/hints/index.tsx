@@ -7,7 +7,7 @@
 // by the tsx preview harness, which uses the classic JSX runtime.
 
 import { createElement, memo, type CSSProperties } from "react";
-import type { HintKind, HintScene, MetricHintKind, InteractionHintKind } from "../../../ui/visual-kinds";
+import type { HintKind, HintScene, MetricHintKind, InteractionHintKind, RemoteHintKind } from "../../../ui/visual-kinds";
 import { SET1_SCENES } from "./set1";
 import { SET2_SCENES } from "./set2";
 import { SET3_SCENES } from "./set3";
@@ -17,11 +17,15 @@ import { CONTROL_SCENES } from "./controls";
 import { METRIC_SCENES } from "./metrics";
 import { ADMISSION_SCENES } from "./admission";
 import { INTERACTION_SCENES } from "./interactions";
+import { REMOTE_SCENES } from "./remote-control";
 import { comicStyle, getComicPresentation, type ComicTone, type ComicMotion } from "../comic-presentation";
 
 export type { HintKind, HintScene };
 
 export const HINT_KINDS: readonly HintKind[] = [
+  "hint-fit-contain",
+  "hint-fit-cover",
+  "hint-fit-fill",
   "hint-share-start",
   "hint-share-stop",
   "hint-microphone-on",
@@ -79,6 +83,7 @@ export const HINT_KINDS: readonly HintKind[] = [
   "hint-theater-exit",
   "hint-route-p2p",
   "hint-route-p2p-required",
+  "hint-route-sfu-required",
   "hint-route-sfu",
   "hint-client-local",
   "hint-app-ready",
@@ -102,6 +107,7 @@ export const HINT_KINDS: readonly HintKind[] = [
   "hint-pip-unavailable",
   ...Object.keys(METRIC_SCENES) as MetricHintKind[],
   ...Object.keys(INTERACTION_SCENES) as InteractionHintKind[],
+  ...Object.keys(REMOTE_SCENES) as RemoteHintKind[],
 ];
 
 export const HINT_SCENES: Record<HintKind, HintScene> = {
@@ -114,6 +120,7 @@ export const HINT_SCENES: Record<HintKind, HintScene> = {
   ...METRIC_SCENES,
   ...ADMISSION_SCENES,
   ...INTERACTION_SCENES,
+  ...REMOTE_SCENES,
 };
 
 const HINT_KIND_SET: ReadonlySet<string> = new Set(HINT_KINDS);
@@ -138,7 +145,7 @@ export const HintComic = memo(function HintComic({
   const resolvedTone = tone ?? defaults.tone;
   const resolvedMotion = motion ?? defaults.motion;
   const style: CSSProperties = {
-    ...comicStyle(resolvedTone, resolvedMotion),
+    ...comicStyle(resolvedTone),
     width: size != null ? `${size}px` : "min(320px, 86%)",
     height: "auto",
     display: "block",

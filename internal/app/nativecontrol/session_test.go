@@ -18,6 +18,7 @@ import (
 	"github.com/TNTcraftHIM/Piik/internal/app/loopback"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativecapture"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativehost"
+	"github.com/TNTcraftHIM/Piik/internal/app/remoteinput"
 	"github.com/TNTcraftHIM/Piik/internal/server/protocol"
 	"github.com/pion/webrtc/v4"
 )
@@ -79,7 +80,7 @@ func TestReceiveOfferReusePreservesLegacyResponseShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := New("", nativecapture.Capabilities{}, false)
+	session := New("", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	for _, reuse := range []bool{false, true} {
 		request := receiveOfferRequest{Version: 10, ID: "request_offer", Type: "receive-offer", ShareID: "viewer_session",
@@ -159,7 +160,7 @@ func TestSourceListFitsTheControlEnvelope(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv("PIIK_SOURCE_LIST_FIXTURE", path)
-		session := New(executable, nativecapture.Capabilities{}, false)
+		session := New(executable, nativecapture.Capabilities{}, false, nil)
 		defer session.Close()
 		value, err := awaitControlResponse(t, session,
 			[]byte(`{"version":10,"id":"request_sources","type":"list-sources"}`))
@@ -268,7 +269,7 @@ func TestMicrophoneOptInPreservesLegacyAndOrdersStateBeforeCompletion(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			session := New(executable, nativecapture.Capabilities{VideoCapture: true, SoftwareVP8: true, Microphone: true}, false)
+			session := New(executable, nativecapture.Capabilities{VideoCapture: true, SoftwareVP8: true, Microphone: true}, false, nil)
 			defer session.Close()
 			request := startShareRequest{Version: 10, ID: "request_start", Type: "start-share", ShareID: "share_123456",
 				Source:           nativecapture.CaptureTarget{Kind: "display", SourceID: "1", Title: "Fixture"},
@@ -320,6 +321,41 @@ func TestMicrophoneOptInPreservesLegacyAndOrdersStateBeforeCompletion(t *testing
 	}
 }
 
+func TestRemoteInputRequiresPageOptIn(t *testing.T) {
+	for _, optIn := range []bool{false, true} {
+		t.Run(strconv.FormatBool(optIn), func(t *testing.T) {
+			t.Setenv("PIIK_QUIET_CAPTURE_FIXTURE", t.TempDir())
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// No OS sink or approved controller: only exercise event ownership.
+			session := New(executable, nativecapture.Capabilities{VideoCapture: true, SoftwareVP8: true}, false, &remoteinput.Manager{})
+			defer session.Close()
+			request := startShareRequest{Version: 10, ID: "request_start", Type: "start-share", ShareID: "share_123456",
+				Source:      nativecapture.CaptureTarget{Kind: "display", SourceID: "1", Title: "Fixture"},
+				RemoteInput: optIn, EdgeCapacity: 1, Codec: "vp8",
+				Profile: qualitySettings{Resolution: protocol.QualityResolution{Width: 1920, Height: 1080}, MaxFramerate: 30, MaxBitrate: 5_000_000, DegradationPreference: "balanced"}}
+			payload, _ := json.Marshal(request)
+			result, err := awaitControlResponse(t, session, payload)
+			if _, ok := result.(shareStartedResponse); err != nil || !ok {
+				t.Fatalf("start failed: %v %#v", err, result)
+			}
+			if (session.current(request.ShareID).RemoteInputChanges() != nil) != optIn {
+				t.Fatal("input events did not respect page opt-in")
+			}
+			// Browser quality candidates relay through this same preview bridge.
+			offer, err := session.current(request.ShareID).PrepareLocalEdge("preview_input", "preview_offer", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(offer.SDP, "m=application ") != optIn {
+				t.Fatal("preview bridge did not preserve the opted-in input channel")
+			}
+		})
+	}
+}
+
 func TestCaptureBorderPreferenceFollowsSourceAndProfile(t *testing.T) {
 	for _, supported := range []bool{false, true} {
 		t.Run(strconv.FormatBool(supported), func(t *testing.T) {
@@ -329,7 +365,7 @@ func TestCaptureBorderPreferenceFollowsSourceAndProfile(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			session := New(executable, nativecapture.Capabilities{VideoCapture: true, SoftwareVP8: true, CaptureBorderControl: supported}, false)
+			session := New(executable, nativecapture.Capabilities{VideoCapture: true, SoftwareVP8: true, CaptureBorderControl: supported}, false, nil)
 			t.Cleanup(func() { _ = session.Close() })
 			handle := func(request any) {
 				t.Helper()
@@ -398,7 +434,7 @@ func TestQuietHostUpdatePreservesControlAndCancelsCleanly(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			session := New(executable, nativecapture.Capabilities{SoftwareVP8: true}, false)
+			session := New(executable, nativecapture.Capabilities{SoftwareVP8: true}, false, nil)
 			t.Cleanup(func() { _ = session.Close() })
 			handle := func(payload string) any {
 				t.Helper()
@@ -596,7 +632,7 @@ func TestSTUNURLsUseTheCurrentBoundedWire(t *testing.T) {
 }
 
 func TestControlMessagesRejectUnknownFieldsAndStaleVersions(t *testing.T) {
-	session := New("missing-capture-process", nativecapture.Capabilities{}, false)
+	session := New("missing-capture-process", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	for _, payload := range []string{
 		`{"version":10,"id":"request_sources","type":"list-sources","extra":true}`,
@@ -629,7 +665,7 @@ func TestResponseKeepsTheRequestIdentity(t *testing.T) {
 }
 
 func TestPrepareLocalEdgeOwnsOneStrictRequestShape(t *testing.T) {
-	session := New("missing-capture-process", nativecapture.Capabilities{}, false)
+	session := New("missing-capture-process", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	valid := `{"version":10,"id":"request_local_edge","type":"prepare-local-edge","shareId":"share_123456","connectionId":"edge_1234567"}`
 	assertOperationFailure(t, session, valid)
@@ -640,7 +676,7 @@ func TestPrepareLocalEdgeOwnsOneStrictRequestShape(t *testing.T) {
 }
 
 func TestPreviewFailureReturnsAnAdvisoryResponse(t *testing.T) {
-	session := New("missing-capture-process", nativecapture.Capabilities{}, false)
+	session := New("missing-capture-process", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	value, err := session.Handle(t.Context(), []byte(
 		`{"version":10,"id":"request_preview","type":"source-preview","source":{"kind":"display","sourceId":"65537","title":"Display 1"}}`,
@@ -655,7 +691,7 @@ func TestPreviewFailureReturnsAnAdvisoryResponse(t *testing.T) {
 }
 
 func TestSourceEnumerationFailureDoesNotCloseControl(t *testing.T) {
-	session := New("missing-capture-process", nativecapture.Capabilities{}, false)
+	session := New("missing-capture-process", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	value, err := session.Handle(t.Context(), []byte(
 		`{"version":10,"id":"request_sources","type":"list-sources"}`,
@@ -707,7 +743,7 @@ func TestQualitySettingsMapOnceIntoNativeMedia(t *testing.T) {
 }
 
 func TestUpdateShareRequiresTheCurrentStrictProfile(t *testing.T) {
-	session := New("missing-capture-process", nativecapture.Capabilities{}, false)
+	session := New("missing-capture-process", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	valid := `{"version":10,"id":"request_update","type":"update-share","shareId":"share_123456","profile":{"resolution":{"width":1920,"height":1080},"maxFramerate":30,"maxBitrate":5000000,"degradationPreference":"balanced","maxAudioBitrate":128000}}`
 	assertOperationFailure(t, session, valid)
@@ -736,7 +772,7 @@ func TestUpdateShareRequiresTheCurrentStrictProfile(t *testing.T) {
 }
 
 func TestReplaceShareSourceKeepsOneStrictTargetShape(t *testing.T) {
-	session := New("missing-capture-process", nativecapture.Capabilities{}, false)
+	session := New("missing-capture-process", nativecapture.Capabilities{}, false, nil)
 	t.Cleanup(func() { _ = session.Close() })
 	valid := `{"version":10,"id":"request_source","type":"replace-share-source","shareId":"share_123456","source":{"kind":"picker","sourceId":"1","title":"Portal"},"audio":false,"adapterIndex":0,"encoderIndex":0}`
 	assertOperationFailure(t, session, valid)

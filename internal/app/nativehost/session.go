@@ -15,8 +15,10 @@ import (
 
 	"github.com/TNTcraftHIM/Piik/internal/app/mediaedge"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativecapture"
+	"github.com/TNTcraftHIM/Piik/internal/app/remoteinput"
 	"github.com/TNTcraftHIM/Piik/internal/diagnostics"
 	"github.com/TNTcraftHIM/Piik/internal/media/encoded"
+	"github.com/TNTcraftHIM/Piik/internal/server/protocol"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -38,6 +40,7 @@ type CaptureState struct {
 	Height          uint32                        `json:"height,omitempty"`
 	FPS             uint32                        `json:"fps,omitempty"`
 	RestoreToken    string                        `json:"restoreToken,omitempty"`
+	RemoteInput     bool                          `json:"remoteInput,omitempty"`
 	Outputs         []nativecapture.OutputProfile `json:"outputs"`
 
 	unavailableLayers []int
@@ -72,6 +75,7 @@ type Options struct {
 	EdgeCapacity     int
 	BindAddress      string
 	PortMapping      bool
+	RemoteInput      *remoteinput.Manager
 	Events           func(context.Context, Event)
 }
 
@@ -105,6 +109,7 @@ type Session struct {
 	audioChanged chan struct{}
 	paused       bool
 	closed       bool
+	remoteInput  *remoteinput.Session
 }
 
 func Start(parent context.Context, options Options) (*Session, error) {
@@ -162,7 +167,9 @@ func Start(parent context.Context, options Options) (*Session, error) {
 		ready:          make(chan error, 1),
 		edges:          make(map[string]*mediaedge.Edge),
 		audioChanged:   make(chan struct{}, 1),
+		remoteInput:    options.RemoteInput.NewSession(),
 	}
+	session.syncRemoteInputSource(nil)
 	if audioStream != nil || options.MicrophoneMixing {
 		audioSource, audioErr := engine.NewAudioSource(
 			options.EdgeCapacity, options.Profile.AudioBitrate,
@@ -279,6 +286,9 @@ func (session *Session) prepareEdge(
 				})
 			},
 			ConnectionState: func(state webrtc.PeerConnectionState, pair *mediaedge.SelectedPair) {
+				if state == webrtc.PeerConnectionStateDisconnected || state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
+					session.remoteInput.RevokeEdge(connectionID)
+				}
 				session.emit(Event{
 					Type: "edge-state", ShareID: session.shareID,
 					ConnectionID: connectionID, State: state.String(),
@@ -308,6 +318,12 @@ func (session *Session) prepareEdge(
 	session.edges[connectionID] = edge
 	session.mu.Unlock()
 	var offer webrtc.SessionDescription
+	if session.remoteInput != nil {
+		channel, channelErr := edge.OpenDataChannel(remoteinput.ChannelLabel)
+		if channelErr == nil {
+			session.remoteInput.Attach(connectionID, channel)
+		}
+	}
 	if localOfferID != "" {
 		offer, err = edge.CreateLocalOffer(session.ctx, localOfferID, false)
 	} else {
@@ -342,6 +358,7 @@ func (session *Session) AddCandidate(
 }
 
 func (session *Session) SetPaused(paused bool) {
+	session.remoteInput.Pause(paused)
 	session.mu.Lock()
 	if session.closed {
 		session.mu.Unlock()
@@ -413,6 +430,7 @@ func (session *Session) UpdateProfile(profile QualityProfile) error {
 		state,
 		nil,
 		false,
+		nil,
 	)
 }
 
@@ -423,7 +441,6 @@ func (session *Session) ReplaceSource(
 ) error {
 	session.updateMu.Lock()
 	defer session.updateMu.Unlock()
-
 	session.mu.Lock()
 	if session.closed {
 		session.mu.Unlock()
@@ -443,6 +460,12 @@ func (session *Session) ReplaceSource(
 	session.mu.Unlock()
 	if session.mixer == nil && audioEnabled != hasAudio {
 		return errors.New("native source audio availability cannot change while sharing")
+	}
+	if !audioOnly {
+		// Suspend input while changing capture. On success bind the committed
+		// target; on failure the previous picture remains eligible for a new grant.
+		session.remoteInput.SetTarget(nativecapture.CaptureTarget{}, nil)
+		defer session.syncRemoteInputSource(nil)
 	}
 	if excludeAudio != nil {
 		if session.mixer == nil {
@@ -492,7 +515,75 @@ func (session *Session) ReplaceSource(
 		state,
 		replacementAudio,
 		true,
+		nil,
 	)
+}
+
+func (session *Session) RemoteInputChanges() <-chan struct{} {
+	return session.remoteInput.Changes()
+}
+
+func (session *Session) RemoteInputState() remoteinput.State {
+	return session.remoteInput.State()
+}
+
+// Reserve the intent synchronously, before dispatch starts asynchronous OS work.
+func (session *Session) PrepareRemoteInputPolicy(mode, password string) (func() error, error) {
+	change, err := session.remoteInput.BeginPolicy(session.ctx, mode, password)
+	if err != nil {
+		return nil, err
+	}
+	return func() error {
+		defer change.Close()
+		if session.remoteInput.UsesCaptureInput() && mode != "off" {
+			session.updateMu.Lock()
+			defer session.updateMu.Unlock()
+			session.mu.Lock()
+			options, profile := session.videoOptions, session.profile
+			closed := session.closed
+			session.mu.Unlock()
+			if closed {
+				return errors.New("native share is unavailable")
+			}
+			if !options.RemoteInput {
+				// Only enabling control requests the combined screen/input permission.
+				// The pending intent can retire without ending the current picture.
+				options.RemoteInput, options.RestoreToken = true, ""
+				replacement, state, err := session.prepareVideo(change.Context(), options, true, false)
+				if err != nil {
+					return err
+				}
+				if err := change.Context().Err(); err != nil {
+					_ = replacement.Close()
+					return err
+				}
+				if err = session.commitCapture(options, profile, replacement, state, nil, false, change); err != nil {
+					return err
+				}
+			}
+		}
+		return change.Apply()
+	}, nil
+}
+
+func (session *Session) SetRemoteInputPeers(peers []protocol.RemoteInputPeer) error {
+	return session.remoteInput.SetPeers(peers)
+}
+
+func (session *Session) DecideRemoteInput(id string, allow bool) error {
+	return session.remoteInput.Decide(id, allow)
+}
+
+func (session *Session) syncRemoteInputSource(change *remoteinput.PolicyChange) {
+	session.mu.Lock()
+	target := session.videoOptions.Target
+	capture := session.stream
+	session.mu.Unlock()
+	if change != nil {
+		change.SetTarget(target, capture)
+	} else {
+		session.remoteInput.SetTarget(target, capture)
+	}
 }
 
 func startAudioCapture(
@@ -516,9 +607,14 @@ func (session *Session) prepareVideo(
 	interactive bool,
 	allowQuiet bool,
 ) (*nativecapture.Stream, CaptureState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, CaptureState{}, err
+	}
 	options.OutputGroups = session.edgeCapacity
+	// Preparation can be cancelled independently. Installed capture always lives
+	// with the share; cancelling a permission request must not kill its process.
 	replacement, err := nativecapture.StartVideo(
-		ctx,
+		session.ctx,
 		session.captureProcess,
 		options,
 	)
@@ -538,6 +634,10 @@ func (session *Session) prepareVideo(
 		_ = replacement.Close()
 		return nil, CaptureState{}, err
 	}
+	if options.RemoteInput && !state.RemoteInput {
+		_ = replacement.Close()
+		return nil, CaptureState{}, errors.New("desktop did not grant remote input")
+	}
 	return replacement, state, nil
 }
 
@@ -548,6 +648,7 @@ func (session *Session) commitCapture(
 	state CaptureState,
 	replacementAudio *nativecapture.Stream,
 	replaceAudio bool,
+	inputChange *remoteinput.PolicyChange,
 ) error {
 	session.mu.Lock()
 	if session.closed || session.ctx.Err() != nil {
@@ -593,6 +694,16 @@ func (session *Session) commitCapture(
 	}
 	if replacement == nil {
 		return nil
+	}
+	// A Portal stream owns input permission as well as the picture. Retire its
+	// grant before closing it, then bind the replacement through the same owner.
+	if session.remoteInput.UsesCaptureInput() {
+		if inputChange != nil {
+			inputChange.SetTarget(nativecapture.CaptureTarget{}, nil)
+		} else {
+			session.remoteInput.SetTarget(nativecapture.CaptureTarget{}, nil)
+		}
+		defer session.syncRemoteInputSource(inputChange)
 	}
 	_ = replacement.RequestKeyFrame(-1)
 	_ = previous.Close()
@@ -687,6 +798,7 @@ func (session *Session) Close() error {
 // Both explicit Close and source termination retire these idempotent owners.
 // Do not wait for run here: Close uses this to unblock run's readers.
 func (session *Session) retire() {
+	session.remoteInput.Close()
 	session.mu.Lock()
 	source, stream := session.source, session.stream
 	audioSource, audioStream := session.audioSource, session.audioStream

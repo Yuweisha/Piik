@@ -150,6 +150,18 @@ by projection while outbound sequence continuity remains intact. Incoming sender
 reports retain their source-clock relation; local codec outputs correlate to one
 input anchor, not independently to each encoder's completion time.
 
+Outgoing video sender reports and RR/RTT accounting share the DownTrack owner.
+Pion supplies the loop at LiveKit's three-second cadence; audio retains Pion
+reports. RTX therefore cannot corrupt the primary clock, and feedback matches
+the owner that sent the report. Real RTCP checks cover probing, pause/resume
+and RTT; constrained checks also cover source replacement. Field logs confirmed
+that a corrupted upstream RTP/NTP reference can block layer changes despite
+restored capacity. A failed downgrade can stop forwarding while the input still
+advances; resuming that input then exposes sequence gaps and RR rollover
+adjustments. Sender-feed gaps and receiver-reported loss are distinct from
+physical network loss. ICE reconnect retains the source reference; update App
+and Server.
+
 Local capture replacement keeps its RTP source and cumulative counters while
 rebasing only the input packetizers. It must not also restart the RTP projector.
 Unconnected edges reserve child slots without asking for output. Video capacity
@@ -595,6 +607,88 @@ The fixture uses the production `RequiredActiveCount` to activate outputs;
 configured demand never substitutes for measured source bitrate. This verifies
 the shared forwarding adapter used by SFU subscribers, not a complete hosted
 Browser/SFU session or a field-report diagnosis.
+
+### Persistent Loss With Low Source Utilization
+
+A 2026-10-18 Native-to-Browser P2P trace retained healthy local 1080p output
+while the remote connection's video budget fell from 5 Mbps to about 8 kbps.
+Remote feedback reported roughly 320 ms RTT and sustained loss, commonly
+10–25%. Congestion began on loss, followed by repeated CTR-trend reductions
+based on progressively lower acknowledged throughput. Probes were sent, but
+their loss prevented promotion. This establishes the reduction path, not the
+physical path's capacity or the origin of its loss. A local TUN was active;
+it was left unchanged, so proxy causation is unproven.
+
+A virtual-network comparison reused the production forwarding gate with a
+12 Mbps link, 320 ms round-trip delay and 15% random packet loss for 30 seconds,
+then removed loss. Full-budget synthetic video bottomed out near 1.16 Mbps;
+video using one quarter of its budget fell to about 13 kbps. Both restored a
+5 Mbps budget after loss ended. These are generated RTP payloads, not decoded
+picture-quality measurements, and the fixed random seed does not pair packets
+across different send rates.
+
+Two measurement defects were already present in v1.9.2's LiveKit v1.13.6 dependency:
+CTR group rollover discarded its boundary packet, and overlapping TWCC reports
+recounted received/lost packets and moved the receive-time baseline. A real Pion
+recorder with four sent packets and two late arrivals produced six ACKs and one
+remaining loss. Packet-state transitions now retain the late ACK repairs while
+ignoring repeated observations; ordinary, probe and CTR measurements receive the
+same facts. Rollover likewise retains its boundary packet. Both controls fail
+without their respective fixes.
+
+The same feedback-boundary review found that replayed observations could advance
+the congestion state without any new measurement. Long runs of delayed packets
+also exceeded the group's ACK-count-sized loss bitmap: all 172 packets could be
+received with 43 losses still counted. Group membership now covers the tracker's
+live history, while late ACKs repair only losses observed by that group. A reused
+bitmap slot cannot erase an expired packet's loss.
+
+Delay measurements now advance in send order with a receive-time watermark;
+historical ACKs repair counts without rewinding that baseline. Actual packet
+timestamps remain available. Reset reseeds delay measurement while preserving
+delivery history. This replaces a scope-local negative-delta clamp that could
+leave 100 ms of phantom queue after one reordered packet, even after hundreds of clean
+packets. A Pion TWCC control verifies queue drainage, steady acknowledged bitrate
+and packet counts; a sustained-delay control still retains congestion.
+
+Inconclusive completed probes also use the existing regulator's failure backoff
+from completion. Previously they entered its successful-probe branch, growing
+the next duration and allowing immediate retries after a long feedback wait.
+The reported result remains inconclusive and cannot raise capacity.
+
+The earlier low-utilization comparison still fell to about 13 kbps after the
+accounting repairs, then restored its 5 Mbps budget about seven seconds after loss
+ended. These results do not establish a repair for persistent-loss collapse.
+Further CTR-reference and measurement-window experiments are not accepted
+production changes. Requiring
+new ratio deterioration held about 1.19 Mbps under the same persistent loss and
+still reduced the budget after a real 120 kbps bottleneck. However, retaining
+that reference can mask later deterioration within one congestion episode;
+refreshing it on improvement re-arms false reductions from random variation.
+Accumulating observations without resetting avoided those reductions but made
+the reaction to a later bottleneck depend on the length of the preceding run.
+These controls reject a reference guard or longer averaging window as a complete
+repair. The lab's final-recovery assertion alone does not detect intervening
+unjustified cuts; inspect the budget timeline against each imposed link change.
+
+Reduced source traffic and network capacity must remain distinct. Google WebRTC's
+[loss-based estimator](https://webrtc.googlesource.com/src/+/refs/heads/main/modules/congestion_controller/goog_cc/loss_based_bwe_v2.cc)
+models inherent loss separately and can exclude the low-ACK capacity candidate
+under its application-limited policy. Its application-limited input comes from sending
+activity relative to the target, not received throughput: a real bottleneck
+also lowers ACK throughput. The retained LiveKit detector has no such input;
+neither freezing loss response nor swapping to Pion's older loss controller
+establishes the same behavior. Pion's
+[underutilized-source discussion](https://github.com/pion/interceptor/issues/156)
+likewise distinguishes unoffered traffic from capacity and points to
+application-limited detection and probing. This is guidance, not a drop-in repair
+for Piik's retained detector.
+
+On 2026-10-18 the owner deferred replacing the loss estimator: sustained high
+loss may reduce quality, and a custom model is not justified by the present
+tradeoff. Retain this limitation without claiming that the severe low-utilization
+case is fixed, or that every upstream implementation has the same behavior.
+Concrete feedback and recovery defects remain separate from that policy choice.
 
 ### Capture Boundary
 

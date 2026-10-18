@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 
 import type { NativeCaptureTarget } from "../../native/wire";
 import { audioApplicationKey, audioApplications, nativeCaptureTargetKey } from "../../native/capture-selection";
 import { useCopy } from "../../ui/copy";
 import { Glyph, type GlyphName } from "../../ui/icons";
+import { navigateTabs } from "../../ui/tab-navigation";
 import { Tooltip } from "./Tooltip";
 import { HintComic } from "./hints";
 import { Pill } from "./primitives";
@@ -186,11 +187,22 @@ export function CaptureSourcePicker({
       className={`lr-tv-overlay lr-source-picker${vis ? " is-visual" : ""}`}
       role="dialog"
       aria-label={t("host.sourcePicker.title")}
+      onKeyDown={event => {
+        if (event.key !== "Tab" || event.defaultPrevented || event.nativeEvent.isComposing) return;
+        // This TV-local task keeps its keyboard loop without making the room
+        // modal; pointer users can still reach the surrounding room controls.
+        const controls = [...event.currentTarget.querySelectorAll<HTMLElement>(
+          'button, input, select, textarea, a[href], summary, [tabindex]',
+        )].filter(element => element.tabIndex >= 0 && !element.matches(":disabled") && element.getClientRects().length);
+        const next = event.shiftKey && event.target === controls[0] ? controls.at(-1)
+          : !event.shiftKey && event.target === controls.at(-1) ? controls[0] : undefined;
+        if (next) { event.preventDefault(); next.focus(); }
+      }}
     >
       <div className="lr-source-picker-panel">
         <header className="lr-source-picker-head">
           <span className="lr-source-picker-mark" aria-hidden="true">
-            <Glyph name="share" size={22} draw="capture-source" />
+            <Glyph name="window" size={22} draw="capture-source" />
           </span>
           {vis ? null : (
             <span className="lr-source-picker-copy">
@@ -209,34 +221,11 @@ export function CaptureSourcePicker({
         </header>
 
         <div
-          className="lr-source-picker-tabs"
-          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+          className="lr-toggle lr-source-picker-tabs"
+          style={{ "--lr-segments": tabs.length, "--lr-selected-index": tabs.indexOf(activeTab) } as CSSProperties}
           role="tablist"
           aria-label={t("host.sourcePicker.title")}
-          onKeyDown={(event) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-              return;
-            const available = tabs.filter(tabAvailable);
-            if (!available.length) return;
-            const index = available.indexOf(activeTab);
-            const next =
-              event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? available.length - 1
-                  : (index +
-                      (event.key === "ArrowRight" ? 1 : -1) +
-                      available.length) %
-                    available.length;
-            const nextTab = available[next]!;
-            event.preventDefault();
-            setTab(nextTab);
-            event.currentTarget
-              .querySelector<HTMLButtonElement>(
-                `[data-source-tab="${nextTab}"]`,
-              )
-              ?.focus();
-          }}
+          onKeyDown={navigateTabs}
         >
           {tabs.map((value) => {
             const button = (
@@ -244,6 +233,7 @@ export function CaptureSourcePicker({
                 type="button"
                 role="tab"
                 id={`${pickerId}-${value}`}
+                className={activeTab === value ? "is-selected" : undefined}
                 data-source-tab={value}
                 aria-controls={`${pickerId}-panel`}
                 aria-selected={activeTab === value}

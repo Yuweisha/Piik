@@ -1,18 +1,31 @@
 # Project Instructions
 
+## Aesthetic And Design Standard
+
+Apply these constraints and relevant skills throughout every conversation turn,
+feature and action. Piik requires a polished experience and clear engineering:
+high aesthetic standards cover UI, interaction, functional boundaries, lifecycle
+and code. Working behavior alone is insufficient. Preserve the product's intent,
+usability, coherence, maintainability and appropriate extensibility.
+
+Before changing behavior or presentation, establish the intended user flow,
+state/resource owner, lifecycle and what would demonstrate a complete result.
+Inspect existing components and mature approaches, then choose the simplest
+coherent design that meets those needs. Simplicity must not discard requested
+functionality, visual quality or necessary safety. Design and verify at the
+scale of the change; routine design choices within an authorized task need no
+separate design document or approval.
+Detailed criteria stay in [visual language](./docs/standards/visual-language.md)
+and [engineering](./docs/standards/engineering.md).
+
 ## Authority And Scope
 
-- Read and follow the complete repo-tracked
-  [`ponytail` skill](./.agents/skills/ponytail/SKILL.md) before coding, review,
-  or design work. It is required guidance for the smallest correct result;
-  project authority and delivery constraints remain owned here.
-- Apply Piik's [Stop That Shit](./.agents/skills/stop-that-shit/SKILL.md) to
-  implementation, debugging and review. Verify new mechanisms completely at
-  the affected boundaries; remove speculative defenses and repeated checks
-  that add no evidence. Proportionate work must still deliver the full result.
 - Within higher-priority instructions, the latest explicit user decision defines
   the task. Review, research, implementation, deployment, and cleanup grant only
   the authority inherent in that task type.
+- This file owns project-wide constraints; linked standards own domain rules,
+  CONTRIBUTING owns delivery, and skills supply task methods. A skill, reference
+  example or audit suggestion cannot override those owners or authorize extra work.
 - Model recovery from the smallest underlying authority and connection state.
   Restart, crash, timeout, and network loss do not justify parallel states or
   case-specific fallbacks when their required action is the same.
@@ -21,9 +34,20 @@
   stage the requested files. Use the full integration/release path only for an
   explicitly requested release or a material contract, route/security,
   infrastructure, persistence, or irreversible change.
-- Until a public release is explicitly declared, keep one current internal
-  contract. Delete replaced wire/config/API surfaces; do not add compatibility
-  aliases, dual readers/writers, migrations, or tests for stale private clients.
+
+## Required Skills
+
+Read each applicable skill completely before using it. Reuse that understanding
+until the task or instructions change; adherence does not require reloading or
+reciting every rule each turn. Use the repo-linked versions below when a global
+skill has the same name. Other skills apply only to matching tasks or explicit
+invocation; follow their relevant guidance without importing unrelated workflows.
+
+| When | Skill and responsibility |
+| --- | --- |
+| Coding, code review, or implementation design | [Ponytail](./.agents/skills/ponytail/SKILL.md): smallest coherent implementation and reuse |
+| Implementation, debugging, or review | [Stop That Shit](./.agents/skills/stop-that-shit/SKILL.md): proportionate investigation, verification and complete delivery |
+| Cross-surface consistency, recurring sibling-path defects, or standardization audits | [Context consistency](./.agents/skills/context-consistency/SKILL.md): trace shared meanings and ownership; ordinary changes check only their affected family |
 
 ## Product Contract
 
@@ -89,8 +113,6 @@
   one owned [contextual contract](./docs/standards/engineering.md#contextual-consistency).
   Check related producers and consumers before adding another local rule;
   preserve differences justified by authority, scope or user intent.
-  Use the [consistency review skill](./.agents/skills/context-consistency/SKILL.md)
-  for cross-cutting consistency work; ordinary changes check the affected family.
 - UI changes must follow the shared [visual language](./docs/standards/visual-language.md):
   cast, semantic colours, result panels and motion have one owner. Extend the
   existing preview when adding a new meaning; do not invent scene-local rules.
@@ -100,7 +122,8 @@
   does not need; total complexity matters more than marginal performance gains.
 - [Versioning](./docs/standards/versioning.md) separates build identity, wire,
   storage and live generations, and owns the public compatibility design.
-  The declared public release is the compatibility baseline for subsequent work.
+  Preserve published compatibility promises; remove replaced private experiments
+  without aliases, dual readers/writers or migrations for stale private clients.
 - Use primary sources for non-trivial design and bugs. Add focused tests in
   proportion to risk; batch full browser/network/endurance checks at acceptance.
 - Keep scripts deterministic, fast, cross-platform and CI-runnable.

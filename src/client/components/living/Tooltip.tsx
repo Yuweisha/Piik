@@ -112,15 +112,13 @@ export function Tooltip({
       title?: string;
     }>(children) ? children : null;
   const disabledTrigger = trigger?.props.disabled === true;
-  const rawDisabledTriggerLabel = disabledTrigger && trigger
+  const rawTriggerLabel = trigger
     ? trigger.props["aria-label"] ??
       trigger.props.label ??
       trigger.props.title
     : undefined;
-  const disabledTriggerLabel =
-    rawDisabledTriggerLabel && isCopyKey(rawDisabledTriggerLabel)
-      ? say(rawDisabledTriggerLabel)
-      : rawDisabledTriggerLabel;
+  const triggerLabel = rawTriggerLabel && isCopyKey(rawTriggerLabel) ? say(rawTriggerLabel) : rawTriggerLabel;
+  const disabledTriggerLabel = disabledTrigger ? triggerLabel : undefined;
   const focusableWrap = disabledTrigger || (overflowing && !kind && trigger?.type !== "button");
 
   useLayoutEffect(() => {
@@ -185,13 +183,19 @@ export function Tooltip({
     tipRef.current?.style.setProperty("--tooltip-max-width", `${Math.max(0, vw - EDGE_MARGIN * 2)}px`);
     tipRef.current?.style.setProperty("--tooltip-max-height", `${Math.max(0, vh - EDGE_MARGIN * 2)}px`);
     const rect = wrap.getBoundingClientRect();
+    // Popovers and fullscreen present a separate subtree. Their DOM ancestors
+    // outside that surface retain page geometry and cannot place its hints.
+    const surface = wrap.closest<HTMLElement>("[popover], :fullscreen");
+    const insideSurface = (element: HTMLElement | null) => element && (!surface || surface.contains(element)) ? element : null;
     // A wrapped control row remains one working area, including on narrow screens.
-    const controlBar = wrap.closest<HTMLElement>(".lr-playback, .lr-source-picker-options, .lr-host-share-controls");
+    const controlBar = insideSurface(wrap.closest<HTMLElement>(".lr-playback, .lr-source-picker-options, .lr-host-share-controls"));
     const playback = controlBar?.classList.contains("lr-playback");
     const avoid = controlBar?.getBoundingClientRect() ?? rect;
-    const player = wrap.closest<HTMLElement>(".lr-tv-screen")?.getBoundingClientRect();
+    const screen = insideSurface(wrap.closest<HTMLElement>(".lr-tv-screen"));
+    const player = screen?.getBoundingClientRect();
+    const mediaBoundary = insideSurface(wrap.closest<HTMLElement>(".lr-tv")) ?? screen;
     const below = playback
-      ? wrap.closest<HTMLElement>(".lr-tv")?.getBoundingClientRect().bottom ?? avoid.bottom
+      ? mediaBoundary?.getBoundingClientRect().bottom ?? avoid.bottom
       : avoid.bottom;
     const measured = panelMounted ? (tipRef.current?.offsetWidth ?? 0) : 0;
     const width = Math.max(0, Math.min(measured || 320, vw - EDGE_MARGIN * 2));
@@ -201,7 +205,7 @@ export function Tooltip({
       (panelMounted ? tipRef.current?.offsetHeight : 0) || FALLBACK_PANEL_HEIGHT;
     const fitsAbove = avoid.top - panelHeight - EDGE_MARGIN >= y + EDGE_MARGIN;
     const fitsBelow = !vh || below + panelHeight + EDGE_MARGIN <= bottom - EDGE_MARGIN;
-    const preferredPlace = wrap.closest(".lr-tv-chin, .lr-host-share-controls") ? "below" : place;
+    const preferredPlace = insideSurface(wrap.closest<HTMLElement>(".lr-tv-chin")) || controlBar?.classList.contains("lr-host-share-controls") ? "below" : place;
     let livePlace: Placement =
       preferredPlace === "above"
         ? fitsAbove || !fitsBelow
@@ -282,6 +286,21 @@ export function Tooltip({
       tip?.hidePopover?.();
     }
   }, [panelMounted, caption, kind]);
+  useLayoutEffect(() => {
+    if (!ownerDocument || !panelMounted) return;
+    const fullscreenChanged = () => {
+      const tip = tipRef.current;
+      if (!tip?.matches(":popover-open")) return;
+      const fullscreen = ownerDocument.fullscreenElement;
+      if (fullscreen && wrapRef.current && !fullscreen.contains(wrapRef.current)) { dismissPanel(); return; }
+      // An already-open popover otherwise remains below the new fullscreen root.
+      tip.hidePopover();
+      tip.showPopover();
+      pickAlignRef.current();
+    };
+    ownerDocument.addEventListener("fullscreenchange", fullscreenChanged);
+    return () => ownerDocument.removeEventListener("fullscreenchange", fullscreenChanged);
+  }, [ownerDocument, panelMounted]);
   useEffect(() => {
     const view = ownerDocument?.defaultView;
     if (!interactionOpen || !panelMounted || !view) return;
@@ -290,6 +309,13 @@ export function Tooltip({
       view.cancelAnimationFrame(frame);
       frame = view.requestAnimationFrame(() => pickAlignRef.current());
     };
+    // A parent popover places itself after opening, and movable panels update
+    // their inset without scrolling the page. Follow that owner's final layout.
+    const surface = wrapRef.current?.closest<HTMLElement>("[popover]");
+    const observer = new ResizeObserver(schedulePick);
+    for (const element of [wrapRef.current, tipRef.current, surface]) if (element) observer.observe(element);
+    const movement = new MutationObserver(schedulePick);
+    if (surface) movement.observe(surface, { attributes: true, attributeFilter: ["style"] });
     schedulePick();
     const viewport = view.visualViewport;
     viewport?.addEventListener("resize", schedulePick);
@@ -298,6 +324,8 @@ export function Tooltip({
     view.addEventListener("scroll", schedulePick, true);
     return () => {
       view.cancelAnimationFrame(frame);
+      observer.disconnect();
+      movement.disconnect();
       viewport?.removeEventListener("resize", schedulePick);
       viewport?.removeEventListener("scroll", schedulePick);
       view.removeEventListener("resize", schedulePick);
@@ -548,8 +576,9 @@ export function Tooltip({
       }) : children}
       <span ref={tipRef} id={tooltipId} popover="manual"
         data-tone={resolvedTone}
-        style={{ ...comicStyle(resolvedTone, resolvedMotion), "--comic-repeat": "infinite", left: position.left, top: position.top, "--tooltip-caret": `${position.caret}px` } as CSSProperties}
-        className={`lr-comic-tip${kind ? " has-comic" : ""}${caption !== undefined ? " is-text" : ""}${placeClass}`} role="tooltip" aria-hidden={!interactionOpen}>
+        style={{ ...comicStyle(resolvedTone), left: position.left, top: position.top, "--tooltip-caret": `${position.caret}px` } as CSSProperties}
+        className={`lr-comic-tip${kind ? " has-comic" : ""}${caption !== undefined ? " is-text" : ""}${placeClass}`}
+        role="tooltip" aria-label={caption ? undefined : triggerLabel} aria-hidden={!interactionOpen || (!caption && !triggerLabel)}>
         {panelMounted ? <span className="lr-comic-tip-content">
           {kind ? isHintKind(kind)
               ? <HintComic kind={kind} size={200} tone={resolvedTone} motion={resolvedMotion} />

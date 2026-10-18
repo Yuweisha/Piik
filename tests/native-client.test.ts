@@ -32,6 +32,15 @@ describe("native App private wire", () => {
     nativeMedia: { video: true, hardwareH264: true },
   };
 
+  it("requires the controlled App platform in remote-control state", () => {
+    const event = { version: NATIVE_CLIENT_PROTOCOL, type: "remote-control-state", shareId: "share_123456", mode: "off", requests: [] };
+    expect(nativeEventSchema.safeParse(event).success).toBe(false);
+    for (const platform of ["windows", "darwin", "linux"]) {
+      expect(nativeEventSchema.parse({ ...event, platform })).toMatchObject({ platform });
+    }
+    expect(nativeEventSchema.safeParse({ ...event, platform: "unknown" }).success).toBe(false);
+  });
+
   it.each(["prompt", "denied"])("background App preferences do not request local access when permission is %s", async (state) => {
     vi.stubGlobal("window", { setTimeout, clearTimeout, location: new URL("https://piik.example/") });
     vi.stubGlobal("navigator", { permissions: { query: vi.fn().mockResolvedValue({ state }) } });
@@ -531,7 +540,7 @@ describe("native App private wire", () => {
     ]) expect(nativeHealthSchema.safeParse({ ...health, ...invalid }).success).toBe(false);
   });
 
-  it.each([undefined, false, true])("gates capture-border commands on advertised support: %s", async (supported) => {
+  it.each([undefined, false, true])("gates optional capture commands on advertised support: %s", async (supported) => {
     const requests: Record<string, unknown>[] = [];
     class CaptureSocket extends EventTarget {
       static readonly OPEN = 1;
@@ -561,7 +570,7 @@ describe("native App private wire", () => {
     vi.stubGlobal("WebSocket", CaptureSocket);
     vi.stubGlobal("window", { setTimeout, clearTimeout });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      ...health, nativeMedia: { ...health.nativeMedia, captureBorderControl: supported },
+      ...health, nativeMedia: { ...health.nativeMedia, captureBorderControl: supported, remoteInput: supported },
     }))));
     const client = await NativeClient.connect();
     expect(client).not.toBeNull();
@@ -578,6 +587,7 @@ describe("native App private wire", () => {
         const extension = supported ? { showCaptureBorder: showCaptureBorder ?? false } : {};
         expect(requests.at(-2)).toEqual({
           version: NATIVE_CLIENT_PROTOCOL, id: expect.any(String), type: "start-share", ...input, ...extension,
+          ...(supported ? { remoteInput: true } : {}),
         });
         expect(requests.at(-1)).toEqual({
           version: NATIVE_CLIENT_PROTOCOL, id: expect.any(String), type: "replace-share-source",

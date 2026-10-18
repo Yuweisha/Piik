@@ -10,6 +10,11 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { bindSvgReplayOnPointerEnter } from "./animation";
 
 const PATHS = {
+  fitContain: { body: (<><rect pathLength={1} x="2" y="3" width="20" height="18" rx="2"/><path pathLength={1} d="M2 7h20M2 17h20m-15-5h10"/></>) },
+  fitCover: { body: (<><rect pathLength={1} x="2" y="3" width="20" height="18" rx="2"/><path pathLength={1} d="M7 3v18M17 3v18m-7-9h4"/></>) },
+  fitStretch: { body: (<><rect pathLength={1} x="2" y="3" width="20" height="18" rx="2"/><path pathLength={1} d="M6 12h12M9 9l-3 3 3 3m6-6 3 3-3 3"/></>) },
+  keyboard: { body: (<><rect pathLength={1} x="2" y="5" width="20" height="14" rx="3"/><path pathLength={1} d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></>) },
+  mouse: { body: (<><rect pathLength={1} x="6" y="2" width="12" height="20" rx="6"/><path pathLength={1} d="M12 2v7M6 10h12"/></>) },
   star: { body: <path pathLength={1} d="m12 3 2.8 5.7 6.3.9-4.5 4.4 1.1 6.3-5.7-3-5.7 3 1.1-6.3L3.1 9.6l6.3-.9Z" /> },
   textSize: { body: (<><path pathLength={1} d="m2 18 4-9 4 9m-6.5-3h5M12 18l5-13 5 13m-8-4h6"/></>) },
   opacity: { body: (<><circle pathLength={1} cx="12" cy="12" r="9"/><path pathLength={1} d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" opacity=".4"/></>) },
@@ -45,7 +50,6 @@ const PATHS = {
   network: { body: (<><rect pathLength={1} x="9" y="2" width="6" height="6" rx="1.5"/><rect pathLength={1} x="2" y="16" width="6" height="6" rx="1.5"/><rect pathLength={1} x="16" y="16" width="6" height="6" rx="1.5"/><path pathLength={1} d="M12 8v3.5M12 11.5 5.5 16M12 11.5l6.5 4.5"/></>) },
   chevron: { body: (<><path pathLength={1} d="m6 9 6 6 6-6"/></>) },
   grip: { body: (<><path pathLength={1} d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" strokeWidth="3"/></>) },
-  move: { body: (<><path pathLength={1} d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></>) },
   loader: { body: (<><path pathLength={1} d="M21 12a9 9 0 1 1-6.22-8.56"/></>) },
   alert: { body: (<><path pathLength={1} d="M12 3.5 2.8 19.5a1 1 0 0 0 .87 1.5h16.66a1 1 0 0 0 .87-1.5L12 3.5Z"/><path pathLength={1} d="M12 10v4.5"/><path pathLength={1} d="M12 17.8h.01"/></>) },
   wifiOff: { body: (<><path pathLength={1} d="m2 2 20 20"/><path pathLength={1} d="M8.5 16.5a5 5 0 0 1 7 0"/><path pathLength={1} d="M5 12.9a11 11 0 0 1 3.1-2.2M15.9 11.4a11 11 0 0 1 3.1 1.5"/><path pathLength={1} d="M1.5 8.8A16 16 0 0 1 8 5.4m8 .2a16 16 0 0 1 6.5 3.2"/><path pathLength={1} d="M12 20h.01"/></>) },

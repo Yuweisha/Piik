@@ -7,7 +7,7 @@ export function usePlaybackControlsVisibility(
   videoRef: RefObject<HTMLVideoElement | null>,
   controlsRef: RefObject<HTMLDivElement | null>,
   keepVisible: boolean,
-): boolean {
+) {
   const [hidden, setHidden] = useState(false);
   const pointerType = useRef("");
 
@@ -27,8 +27,12 @@ export function usePlaybackControlsVisibility(
       window.clearTimeout(timer);
       timer = undefined;
     };
+    // Other surfaces in the TV (such as remote input) own their keyboard focus;
+    // only interaction with playback itself should pin its controls open.
+    const owns = (target: EventTarget | null) => target === video ||
+      (target instanceof Node && controls.contains(target));
     const held = () => keepVisible || pressed || hoveringControls ||
-      (screen.contains(document.activeElement) && document.activeElement?.matches(":focus-visible")) ||
+      (owns(document.activeElement) && document.activeElement?.matches(":focus-visible")) ||
       controls.querySelector(":popover-open") !== null;
     const scheduleHide = () => {
       clearIdle();
@@ -49,7 +53,9 @@ export function usePlaybackControlsVisibility(
     };
 
     screen.addEventListener("pointermove", (event) => {
-      if (event.pointerType === "touch") return;
+      // Remote input owns picture motion; its bezel pull reveals the controls.
+      if (event.pointerType === "touch" || screen.contains(document.pointerLockElement) ||
+        (event.target instanceof Element && event.target.closest(".lr-remote-input-surface"))) return;
       // Cursor/style changes can emit stationary moves (Video.js #1068).
       if (lastMove?.x === event.screenX && lastMove.y === event.screenY) return;
       lastMove = { x: event.screenX, y: event.screenY };
@@ -76,16 +82,20 @@ export function usePlaybackControlsVisibility(
       }
     }, options);
     screen.addEventListener("click", (event) => {
-      // Native click excludes scrolling/cancelled gestures. A video tap only
-      // reveals/hides controls; playback remains owned by the play button.
+      // Only the picture itself is a local reveal target. Remote input and
+      // other tools retain their clicks; the play button owns playback.
       if (event.target === video && pointerType.current === "touch" && !held()) {
         setHidden((current) => !current);
         scheduleHide();
       }
     }, options);
-    screen.addEventListener("focusin", show, options);
+    screen.addEventListener("focusin", event => {
+      if (owns(event.target)) show(); else scheduleHide();
+    }, options);
     screen.addEventListener("focusout", scheduleHide, options);
-    screen.addEventListener("keydown", show, options);
+    screen.addEventListener("keydown", event => {
+      if (owns(event.target)) show();
+    }, options);
     // Popovers retain their DOM parent in the top layer. Their native toggle
     // event resumes idle hiding after a tooltip/long-press has finished.
     controls.addEventListener("toggle", show, { ...options, capture: true });
@@ -101,5 +111,5 @@ export function usePlaybackControlsVisibility(
     };
   }, [videoRef, controlsRef, keepVisible]);
 
-  return keepVisible ? false : hidden;
+  return { hidden: keepVisible ? false : hidden };
 }

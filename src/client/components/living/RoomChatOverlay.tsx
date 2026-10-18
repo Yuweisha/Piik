@@ -1,21 +1,48 @@
-import { useEffect, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useId, useSyncExternalStore, type CSSProperties } from "react";
 import { CHAT_OVERLAY_DURATION_MS, RoomInteractionSession } from "../../lib/room-interactions";
+import { CHAT_OVERLAY_LIMITS } from "../../lib/room-preferences";
+import { useCopy } from "../../ui/copy";
+import { Glyph } from "../../ui/icons";
 import { Btn } from "./primitives";
+import { Tooltip } from "./Tooltip";
 import "./room-chat-overlay.css";
 
-export function RoomChatToggle({ session, caption = false }: { session: RoomInteractionSession | null; caption?: boolean }) {
-  return session ? <ConnectedToggle key={session.key} session={session} caption={caption} /> : null;
+export function RoomChatToggle({ session }: { session: RoomInteractionSession | null }) {
+  return session ? <ConnectedToggle key={session.key} session={session} /> : null;
 }
 
-function ConnectedToggle({ session, caption }: { session: RoomInteractionSession; caption: boolean }) {
+function ConnectedToggle({ session }: { session: RoomInteractionSession }) {
   const { overlayEnabled } = useSyncExternalStore(session.subscribe, session.getSnapshot);
   return <span className="lr-chat-overlay-toggle"><Btn icon="danmaku"
-    cap={caption ? "interaction.overlay.label" : undefined}
     title={overlayEnabled ? "interaction.overlay.hide" : "interaction.overlay.show"}
     hint={overlayEnabled ? "hint-chat-overlay-hide" : "hint-chat-overlay-show"}
     hintText={overlayEnabled ? "interaction.overlay.hideHint" : "interaction.overlay.showHint"}
     pressed={overlayEnabled} tone={overlayEnabled ? "on" : undefined}
     onClick={() => session.setOverlayEnabled(!overlayEnabled)} /></span>;
+}
+
+export function RoomChatOverlaySettings({ session }: { session: RoomInteractionSession }) {
+  const { overlayAppearance } = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const { t, vis } = useCopy();
+  const id = useId();
+  return <div className="lr-chat-overlay-settings">
+    {(["scale", "opacity"] as const).map(property => {
+      const percent = Math.round(overlayAppearance[property] * 100);
+      const label = t(`interaction.overlay.${property}`);
+      return <div className="lr-chat-setting" key={property}>
+        <label htmlFor={`${id}-${property}`}>
+          {vis ? <Glyph name={property === "scale" ? "textSize" : "opacity"} size={18} /> : label}
+          <output htmlFor={`${id}-${property}`}>{percent}%</output>
+        </label>
+        <Tooltip kind="hint-chat-settings" text={vis ? undefined : label}>
+          <input id={`${id}-${property}`} type="range" min={CHAT_OVERLAY_LIMITS[property][0] * 100}
+            max={CHAT_OVERLAY_LIMITS[property][1] * 100} step={10} value={percent}
+            aria-label={label} aria-valuetext={`${percent}%`}
+            onChange={event => session.setOverlayAppearance({ ...overlayAppearance, [property]: Number(event.target.value) / 100 })} />
+        </Tooltip>
+      </div>;
+    })}
+  </div>;
 }
 
 export function RoomChatOverlay({ session, visible }: { session: RoomInteractionSession | null; visible: boolean }) {

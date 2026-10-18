@@ -26,6 +26,7 @@ authorization counters for visual consistency can invalidate data or stale-work
 fences. A room number is a user-facing address, not a software version.
 The private tooling-only npm package carries no independent product version.
 The App launcher displays its installed version from the existing launcher state;
+the Web footer displays its bundled build version without a network lookup.
 Server startup logs retain the running version and revision. The website may
 display GitHub's latest stable tag and `published_at` as optional metadata, never
 a manually maintained version or the installed App's identity. Publication time
@@ -141,17 +142,18 @@ identity separately. Stable update notices ignore prereleases.
 
 ### Major-Upgrade Guidance
 
-The App update notice keeps a separate link to the selected provider's exact
-release page. A newer major adds a short, visible breaking-change notice; the
-Server logs the same distinction while preserving its checker JSON and exit
-codes. This is release guidance, not a replacement for actual wire checks.
+The App update notice keeps direct download as its primary action, with a small
+Gitee mirror link below it. A newer major adds a short, visible breaking-change
+notice linking to the selected provider's exact release page; ordinary updates
+do not add a separate release-notes control. The Server logs the same distinction
+while preserving its checker JSON and exit codes. This is release guidance,
+not a replacement for actual wire checks.
 Updates remain a manual action. Release prose stays on GitHub/Gitee; the App
 does not fetch or render remote Markdown or add a second changelog store.
-Direct download remains the primary action; reading notes is optional. Keep the
-major warning inline, without a confirmation dialog or mandatory website detour.
-The same notice offers the official website's download section as a manual
-alternative, including the verified Gitee mirror. API response time does not
-measure package-download throughput; do not add speed probes or automatic
+Keep the major warning inline, without a confirmation dialog or mandatory
+website detour. The mirror link opens Gitee releases without depending on the
+website. API response time does not measure package-download throughput;
+do not add speed probes or automatic
 provider switching to an otherwise valid update check.
 
 Older installed Apps cannot acquire new warning UI from release metadata.
@@ -288,10 +290,7 @@ preserves authored Markdown and appends identity/checksums; it does not infer an
 editorial summary from a version number. Keep provenance and the full changelog
 link after the user-facing explanation.
 
-Editorial references: [CC Switch releases](https://github.com/farion1231/cc-switch/releases)
-and [OBS Studio releases](https://github.com/obsproject/obs-studio/releases) show
-release introductions and grouped changes; Piik's exact scope and upgrade
-instructions must come from its own accepted changes.
+Piik's release scope and upgrade instructions come from its own accepted changes.
 
 ## Release Sources
 

@@ -33,7 +33,7 @@ import { Glyph } from "./ui/icons";
 import { applyLaunchCopy, useCopy } from "./ui/copy";
 import { consoleLanguage } from "./locales";
 import { initTheme } from "./ui/theme";
-import { installBrowserDebug, withBrowserDebug } from "./lib/debug";
+import { debugError, installBrowserDebug, withBrowserDebug } from "./lib/debug";
 
 const TooltipPreviewPage = import.meta.env.DEV
   ? lazy(() => import("./pages/TooltipPreviewPage").then((module) => ({ default: module.TooltipPreviewPage })))
@@ -115,11 +115,16 @@ export function App() {
   }, [lang, vis, launchedByClient]);
 
   return (
-    <RouteBoundary>
-      <Suspense fallback={<RouteLoader />}>
-        <AppRoute />
-      </Suspense>
-    </RouteBoundary>
+    <div className="lr-app-shell">
+      <RouteBoundary>
+        <Suspense fallback={<RouteLoader />}>
+          <AppRoute />
+        </Suspense>
+      </RouteBoundary>
+      {appRoute.kind !== "client" && <footer className="lr-web-version">
+        Piik Web {import.meta.env.VITE_PIIK_VERSION ?? "development"}
+      </footer>}
+    </div>
   );
 }
 
@@ -133,6 +138,10 @@ class RouteBoundary extends Component<
 
   static getDerivedStateFromError(): { failed: boolean } {
     return { failed: true };
+  }
+
+  componentDidCatch(error: Error): void {
+    debugError("app", "route-failed", error);
   }
 
   render(): ReactNode {
@@ -392,6 +401,7 @@ function SiteAccessGate({
     return (
       <HostPage
         roomInteractionsAvailable={capabilities?.roomInteractions === true}
+        roomReactionIds={capabilities?.roomReactionIds}
         hostRoomSessionAvailable={capabilities?.hostRoomSession === true}
         launchedByClient={launchedByClient}
         sfuAvailable={capabilities?.sfu === true}

@@ -132,8 +132,16 @@ for participants still connected to the same room. Interaction subscriptions
 inherit existing membership, replacement and revocation checks; they grant no
 additional authority and do not modify media routes.
 
-Sending a reaction requires a registered identifier. Received reaction events
-validate their envelope, identity, target and bounded identifier, then the page
+The reaction palette is curated, with no free-form input. Additions preserve
+existing choices.
+
+Sending a reaction requires a registered identifier. The Server advertises its
+command registry through the optional `roomReactionIds` runtime capability.
+The palette and send owner use its intersection with effects the page knows;
+an absent registry retains the published 2.1 reaction set. Interaction-ready
+events keep their existing shape.
+Received reaction events validate their envelope, identity, target and bounded
+identifier, then the page
 skips effects it cannot display. An unknown effect does not terminate signaling,
 enter history, clear a draft or confirm a pending send. Unknown message kinds,
 extra fields and malformed identities remain invalid; this presentation rule

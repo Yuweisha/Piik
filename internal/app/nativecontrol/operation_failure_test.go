@@ -13,6 +13,7 @@ import (
 
 	"github.com/TNTcraftHIM/Piik/internal/app/loopback"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativecapture"
+	"github.com/TNTcraftHIM/Piik/internal/app/remoteinput"
 	"github.com/TNTcraftHIM/Piik/internal/server/protocol"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -48,7 +49,7 @@ func TestSourceProbesRetireWithTheirControlConnection(t *testing.T) {
 				const origin = "https://site.example"
 				server, err := loopback.Start(ctx, loopback.Options{AllowedOrigins: []string{origin},
 					NewControl: func() loopback.ControlSession {
-						return &observedProbeSession{Session: New(executable, nativecapture.Capabilities{}, false), closed: closed}
+						return &observedProbeSession{Session: New(executable, nativecapture.Capabilities{}, false, nil), closed: closed}
 					}})
 				if err != nil {
 					t.Fatal(err)
@@ -123,7 +124,9 @@ func TestOperationalFailureAndIdempotentStopKeepTheRealControlConnection(t *test
 	defer cancel()
 	const origin = "https://site.example"
 	server, err := loopback.Start(ctx, loopback.Options{AllowedOrigins: []string{origin},
-		NewControl: func() loopback.ControlSession { return New("missing-capture", nativecapture.Capabilities{}, false) }})
+		NewControl: func() loopback.ControlSession {
+			return New("missing-capture", nativecapture.Capabilities{}, false, nil)
+		}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +146,7 @@ func TestOperationalFailureAndIdempotentStopKeepTheRealControlConnection(t *test
 		{"edge-answer", `,"shareId":"missing_share","connectionId":"edge_123456","sdp":"v=0"`, "request-failed"},
 		{"receive-candidate", `,"shareId":"missing_share","connectionId":"edge_123456","candidate":null`, "request-failed"},
 		{"pause-share", `,"shareId":"missing_share","paused":true`, "request-failed"},
+		{"set-remote-control", `,"shareId":"missing_share","requestId":"input_request","allow":true`, "request-failed"},
 		{"publication-media", `,"shareId":"missing_share","publicationGeneration":"publication_123","connectionId":"edge_123456"`, "request-failed"},
 		{"stop-share", `,"shareId":"missing_share"`, "share-stopped"},
 		{"stop-share", `,"shareId":"missing_share"`, "share-stopped"},
@@ -178,7 +182,7 @@ func TestFailedEdgeAndLateStopDoNotRetireAnotherShare(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PIIK_QUIET_CAPTURE_FIXTURE", t.TempDir())
-	session := New(executable, nativecapture.Capabilities{SoftwareVP8: true}, false)
+	session := New(executable, nativecapture.Capabilities{SoftwareVP8: true}, false, nil)
 	defer session.Close()
 	const start = `{"version":10,"id":"request_start","type":"start-share","shareId":"share_123456","source":{"kind":"display","sourceId":"1","title":"Fixture"},"audio":false,"edgeCapacity":1,"codec":"vp8","profile":{"resolution":{"width":1920,"height":1080},"maxFramerate":30,"maxBitrate":5000000,"degradationPreference":"balanced"}}`
 	if value, err := awaitControlResponse(t, session, []byte(start)); err != nil {
@@ -272,9 +276,10 @@ func TestCaptureStartupAndReplacementRemainCancellable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			session := New(executable, nativecapture.Capabilities{SoftwareVP8: true}, false)
+			// No input sink is needed to turn permission off.
+			session := New(executable, nativecapture.Capabilities{SoftwareVP8: true}, false, &remoteinput.Manager{})
 			defer session.Close()
-			start := `{"version":10,"id":"request_start","type":"start-share","shareId":"share_123456","source":{"kind":"display","sourceId":"1","title":"Fixture"},"edgeCapacity":1,"codec":"vp8","profile":{"resolution":{"width":1920,"height":1080},"maxFramerate":30,"maxBitrate":5000000,"degradationPreference":"balanced"}}`
+			start := `{"version":10,"id":"request_start","type":"start-share","shareId":"share_123456","source":{"kind":"display","sourceId":"1","title":"Fixture"},"remoteInput":true,"edgeCapacity":1,"codec":"vp8","profile":{"resolution":{"width":1920,"height":1080},"maxFramerate":30,"maxBitrate":5000000,"degradationPreference":"balanced"}}`
 			payload := strings.Replace(start, `"width":1920,"height":1080`, `"width":1280,"height":720`, 1)
 			if kind == "replace-share-source" {
 				if value, err := awaitControlResponse(t, session, []byte(start)); err != nil {
@@ -300,6 +305,12 @@ func TestCaptureStartupAndReplacementRemainCancellable(t *testing.T) {
 			}
 			// No unbounded parallel initialization while the first is still waiting.
 			assertOperationFailure(t, session, payload)
+			if kind == "replace-share-source" {
+				value, err := session.Handle(t.Context(), []byte(`{"version":10,"id":"request_input_off","type":"set-remote-control-policy","shareId":"share_123456","mode":"off"}`))
+				if err != nil || value != response(requestEnvelope{Version: 10, ID: "request_input_off"}, "remote-control-set") {
+					t.Fatalf("capture preparation blocked permission shutdown: %#v, %v", value, err)
+				}
+			}
 			if _, err := session.Handle(t.Context(), []byte(`{"version":10,"id":"request_ice","type":"edge-candidate","shareId":"share_123456","connectionId":"missing_edge","candidate":null}`)); err != nil {
 				t.Fatalf("capture initialization blocked independent control: %v", err)
 			}

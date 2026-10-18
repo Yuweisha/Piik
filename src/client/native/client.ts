@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { RemoteControlMode } from "../remote-control/protocol";
 import { debugError, debugEvent } from "../lib/debug";
 
 import type {
@@ -338,6 +339,7 @@ export class NativeClient {
         ...shareInput,
         ...(excludeAudio ? { excludeAudio } : {}),
         ...(this.health.nativeMedia.microphone ? { microphoneMixing: true } : {}),
+        ...(this.health.nativeMedia.remoteInput ? { remoteInput: true } : {}),
         ...(this.health.nativeMedia.captureBorderControl ? { showCaptureBorder } : {}),
       },
       shareStartedResponseSchema,
@@ -697,6 +699,18 @@ export class NativeClient {
       } while (this.microphoneVolumeUpdate === update && !this.closed);
     })().finally(() => { if (this.microphoneVolumeUpdate === update) this.microphoneVolumeUpdate = null; });
     return update.done;
+  }
+
+  async setRemoteControl(shareId: string, requestId: string, allow: boolean): Promise<void> {
+    await this.request("set-remote-control", { shareId, requestId, allow }, nativeAckResponseSchema);
+  }
+
+  async setRemoteControlPolicy(shareId: string, mode: RemoteControlMode, password?: string): Promise<void> {
+    await this.request("set-remote-control-policy", { shareId, mode, ...(password !== undefined ? { password } : {}) }, nativeAckResponseSchema, null);
+  }
+
+  async setRemoteInputPeers(shareId: string, peers: { peerId: string; endpointId: string; secret: string }[]): Promise<void> {
+    await this.request("set-remote-input-peers", { shareId, peers }, nativeAckResponseSchema);
   }
 
   async stopShare(shareId: string): Promise<void> {

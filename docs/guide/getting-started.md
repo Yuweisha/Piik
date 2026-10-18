@@ -7,7 +7,7 @@ watching, using Piik online, using Piik App and sharing through an existing site
 
 [Join a room](#join-a-friends-room) · [Use online](#use-piik-online) ·
 [Piik App](#share-with-piik-app) · [Existing site](#share-from-an-existing-site) ·
-[Chat and reactions](#chat-and-reactions) ·
+[Remote control](#let-a-friend-control-your-shared-screen) · [Chat and reactions](#chat-and-reactions) ·
 [Troubleshooting](#when-something-gets-in-the-way)
 
 Viewers need a browser and an invitation. To start sharing, download Piik App
@@ -21,7 +21,7 @@ and choose **Public invite**. To share without installing, open
 3. Move the pointer over the picture or tap it to show the playback bar.
 
 The playback bar controls only your own picture and sound.
-On a computer, click the picture to pause or resume; double-click to enter or
+Use the playback button to pause or resume; on a computer, double-click the picture to enter or
 leave fullscreen where supported. On a phone, tap the picture to show the bar
 and use its buttons. Safari may show system controls in video fullscreen.
 
@@ -31,9 +31,10 @@ and use its buttons. Safari may show system controls in video fullscreen.
 | Control | What it does |
 | --- | --- |
 | **Theater mode** | Expands the picture inside the browser tab. |
-| **Fullscreen** | Uses the full screen while keeping the picture's proportions; black bars can remain when they differ from your screen. |
+| **Fullscreen** | Expands the picture to the full screen. |
 | **Picture in picture** | Opens a floating video where supported. |
 | **Volume** | Goes up to 200% with audio boost, or 100% otherwise. Lower it if the sound distorts. |
+| **Playback settings** | **Fit** keeps the whole picture visible; **Fill** crops its edges; **Stretch** fills the area by changing its proportions. Connection settings default to **Auto**; available alternatives depend on the host and site. |
 
 </details>
 
@@ -76,9 +77,10 @@ restrictive networks may load the page but block video.
    **Screens** as available. Pick the actual source and sound option.
 5. Copy and send the room invitation. Keep both the App and sharing tab open.
 
-When the launcher offers an update, **Release notes** opens its details on GitHub
-or Gitee. A new major version includes a compatibility warning; read the upgrade
-instructions before replacing your App.
+Click the launcher's update button to download the new App. **Gitee mirror**
+provides an alternative if the download is slow or unavailable. A new major
+version includes a compatibility warning that links to the upgrade instructions;
+read them before replacing your App.
 
 | Filename contains | Platform |
 | --- | --- |
@@ -109,10 +111,16 @@ also keeps an **App launcher** address. To change between Local room and Public
 invite, close and reopen the App, then choose again. This ends the previous room
 and generates a new public-invitation address.
 
-**Already have a Piik site?** Keep the App running, open the site and click
-**App** at the top. Check the address on the local confirmation page, then choose
-**Allow access**. Enter any site passphrase on the site itself. Allow local-network
-access if the browser asks. No room mode needs to be selected in the launcher.
+### Use App with an existing site
+
+1. Keep Piik App running and open the Piik site in your browser. Enter its site
+   passphrase if asked; [Piik online](https://demo.piik.tv) needs no site passphrase.
+   No room mode needs to be selected in the App launcher.
+2. Click **App** at the top. Allow local-network access if the browser asks.
+3. Check the site address on the local confirmation page, then choose **Allow access**.
+4. Return to the site, choose **Start sharing**, then **Apps / Windows** or **Screens**.
+   Select a source and send the new room invitation to your friends.
+
 You can also choose **Connect Piik App** inside the **Start sharing** source
 selector; its list updates as soon as the connection completes.
 If connection fails, the App button offers **Retry** and **Download App**.
@@ -139,8 +147,10 @@ The [App guide](../../cmd/piik-app/README.md#modes) explains the connection setu
 
 ### Upgrading
 
-**Piik 2.0 and 1.x cannot be used together.** The App and the site it connects to
-need the same major version. Read the release notes on
+**Piik 2.x and 1.x cannot be used together.** The App and the site it connects to
+need the same major version. Different 2.x versions preserve established sharing
+and viewing; new features require support from the relevant App and site.
+Read the release notes on
 [GitHub](https://github.com/TNTcraftHIM/Piik/releases/latest) or
 [Gitee](https://gitee.com/TNTcraftHIM/Piik/releases) before upgrading.
 
@@ -173,16 +183,17 @@ Screen capture requires an HTTPS site or `localhost`. The sources and audio
 offered by the picker depend on your browser and operating system.
 Invitation links grant access to that room; share them with the people you want there.
 
-To use App capture on that same site, follow [Connect to Site](#choose-an-app-mode).
+To use App capture on that same site, follow [Use App with an existing site](#use-app-with-an-existing-site).
 The site manages rooms and invitations; the App supplies native capture.
 If its operator has enabled SFU forwarding, turn off **Privacy mode** before
 sharing to allow that fallback. The project's online site uses P2P only.
 
 ## Picture and sound settings
 
-Open **Sharing settings** below the picture to adjust picture and audio quality.
+Open **Sharing settings** below the picture. Picture presets are directly available;
+expand **Fine-tune picture** for resolution, frame-rate, bitrate, picture preference and video codec.
 
-- Choose a picture preset, or enter width and height under **Resolution limit**.
+- In **Fine-tune picture**, enter width and height under **Resolution limit**.
   Piik preserves the source's proportions within that ceiling, including portrait
   and ultrawide pictures.
 - Sliders cover 15–60 fps in steps of 5 and 2–12 Mbps in steps of 0.5. You can also enter an
@@ -191,7 +202,9 @@ Open **Sharing settings** below the picture to adjust picture and audio quality.
   selects the nearest available slider value.
   The frame-rate limit depends
   on picture size: for example, 1080p240, 1440p144 and 4K60 are accepted requests.
-- Choose an audio preset, or enter an **Audio bitrate limit** from 6 to 320 kbps.
+- Under **Sound**, adjust source audio and microphone input. **Audio quality**
+  controls the shared audio output: choose a preset or enter an **Audio bitrate limit**
+  from 6 to 320 kbps.
 
 The selectable range depends on picture size and the connected App. Picture and sound
 still adapt to the source, device and available bandwidth.
@@ -203,7 +216,7 @@ when your public-invite address changes.
 ## Add your voice
 
 While sharing, select **Microphone** below the picture and
-allow microphone access. Select it again to mute. Open **Settings → Sound** below the picture
+allow microphone access. Select it again to mute. Open **Sharing settings → Sound** below the picture
 to choose a microphone and adjust its input volume.
 The default volume is 100%, with up to 200% available.
 Source audio and your voice reach viewers together. The Host preview stays muted.
@@ -226,6 +239,10 @@ the [OBS audio-routing guide](https://obsproject.com/kb/video-call-streaming-tut
 then select the virtual audio input in Piik's microphone list and turn on the microphone.
 
 ### Exclude a voice app from screen audio
+
+On Windows, this control applies to system sound from **Screens**. **Apps / Windows**
+captures only the selected application's process tree; **Camera** uses the separately
+selected microphone or audio input.
 
 On supported Windows Apps, open the **Screens** tab and enable **System sound**.
 Under **Exclude application audio**, select a window belonging to the voice app,
@@ -250,22 +267,66 @@ Windows 10 support depends on system updates and the actual capability check.
 If the option is absent, share a single application window or route the voice
 app to a different playback device.
 
+## Let a friend control your shared screen
+
+1. Share through Piik App using **Apps / Windows** or **Screens**.
+2. Open **Remote control** below the picture and turn it on. It starts with
+   **Ask each time**.
+3. Your friend selects **Request control** in their playback bar. Choose
+   **Allow control** on your sharing page when their request arrives.
+
+When sharing a window, switch back to that window after allowing control. Input
+pauses while another window is active and resumes when you return.
+
+One viewer can control at a time, using a desktop or mobile browser. Update the
+host's App and the room's site, then refresh the viewing page. The control button
+appears when the host enables control and the connection supports it. Browser
+and camera capture cannot receive remote input.
+
+Either person can choose **End control**. On the host's computer, **Ctrl+Alt+F10**
+on Windows or **Control+Option+F10** on macOS also stops control. Changing the
+shared source or stopping sharing turns remote control off. After a connection
+interruption, the viewer requests control again.
+
+On a phone, swipe to move the pointer, tap to click and hold to drag. Two-finger
+tap is right-click; two-finger swipe scrolls. Pinch to zoom, then use two fingers
+to move around the enlarged picture. **Remote keyboard** provides keys,
+shortcuts and text input. On a computer, **Game mouse** captures continuous
+mouse movement; press **Esc** to release it.
+
+<details>
+<summary>Permissions and platform support</summary>
+
+**Room Viewers** allows a room member to take idle control without asking each
+time; **Password** requires a separate control password. These choices apply
+only to the current shared source. Control gives access to the computer's mouse
+and keyboard, so allow people you trust. It is not limited to what is visible
+inside the video.
+
+macOS asks for Accessibility permission. Linux needs a supported desktop Portal
+and currently controls a selected screen, not an application window. Windows
+is the primary physically tested host; macOS/Linux device acceptance is still
+limited. System-protected shortcuts and some games may not accept remote input.
+
+</details>
+
 ## Chat and reactions
 
-Once the host starts the first share, participants can select **Chat** below the
+Once the host starts the first share, participants can select **Interact** below the
 sofa to send messages. Select a person on the sofa to open their reaction menu:
 your own reactions appear above you; reactions sent to a friend fly towards them.
-The chat window can be moved and resized without rearranging the page.
+The interaction window can be moved and resized without rearranging the page.
 
-Supported desktop browsers show **Always-on-top chat** in the window's top-right
-corner, so you can read messages while playing. Keep the Piik page open; closing
-the small window returns chat to the page. Use a windowed or borderless game;
-exclusive fullscreen may cover the chat. The window cannot show the game through
-its background or let mouse clicks pass through.
+Supported desktop browsers show **Open in always-on-top window** in its top-right
+corner. You can read messages, see reactions and select someone to interact with
+while playing. Keep the Piik page open; closing the small window returns it to the page.
+Use a windowed or borderless game; exclusive fullscreen may cover the window.
+The window cannot show the game through its background or let mouse clicks pass through.
 
 **On screen**, beside the message box or in the viewer's playback bar, shows new
 messages over the picture. It is off by default and only changes your own view.
-Open **Chat settings** in the chat window to adjust text size and opacity.
+Adjust text size and opacity in **Playback settings → On-screen chat**, or in
+the chat window's **Chat settings**. Both use the same local preferences.
 System video fullscreen and picture in picture cannot show these overlays.
 
 Stopping a share keeps the room's chat available. App Local and Public invite

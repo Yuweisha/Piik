@@ -61,6 +61,12 @@ boundaries exist: [shared core](../adr/0012-shared-go-backend-core.md),
 [Browser pooling](../adr/0014-browser-node-local-encoding-pool.md).
 Directory names are a map, not a requirement to introduce another layer.
 
+The official website and public Demo are optional entry points, not runtime
+dependencies of App or self-hosted rooms. Ship the Web assets with the binaries.
+Help and download navigation may prefer the reachable website, with direct
+GitHub destinations while its bounded, page-scoped check is pending or fails.
+Keep this check outside room startup, authorization and media lifecycles.
+
 ## Contract Map
 
 | Boundary | Schema/validation owners |
@@ -267,6 +273,9 @@ force different authorities into a universal state manager.
 
 The [consistency skill](../../.agents/skills/context-consistency/SKILL.md) owns the
 review method; ordinary changes check their affected consumers.
+UI control and surface selection belongs to the
+[visual language](./visual-language.md#control-selection), including when tools
+remain attached, float or detach. Reuse that contract before adding local UI rules.
 
 These boundaries align with [W3C consistent identification](https://www.w3.org/WAI/WCAG21/Understanding/consistent-identification.html),
 [GOV.UK contribution criteria](https://design-system.service.gov.uk/community/contribution-criteria/)

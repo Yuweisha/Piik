@@ -24,6 +24,12 @@ room identity, current state, roster, and one manual media-reconnect action.
 Controls and text must remain usable without overlap or horizontal overflow on
 desktop and mobile viewports.
 
+Personal room-tool presentation and incoming-route preferences are remembered
+within the same Browser origin across rooms and reloads. Their existing domain
+owners still apply capability and room-policy constraints. Restoring preferences
+never restores room admission, control grants, actual held input, passwords or
+message drafts, and never starts capture or remote control.
+
 A capable, opted-in authenticated room session
 outlives its current publication. Stopping capture retires media, not chat;
 restoring an existing room joins it without starting capture. Entering the page
@@ -34,10 +40,10 @@ is absent, provided the room service and their admitted sessions remain availabl
 [Rooms and access](./rooms-access.md#room-interactions) owns interaction authority
 and retention; [status](../status.md#accepted-interaction-phase) owns release readiness.
 
-On capable desktop browsers, chat can move to a Document Picture-in-Picture
-window. It remains one presentation of the admitted room session, with the same
-draft and history. Read visibility and guidance follow its current document.
-Closing the window returns chat to the page; room retirement or opener teardown
+On capable desktop browsers, the interaction window can move to a Document
+Picture-in-Picture window. It retains the admitted room session's messages,
+reactions and draft. Read visibility and guidance follow its current document.
+Closing the window returns it to the page; room retirement or opener teardown
 closes it, including a late asynchronous open. Browser window support does not
 promise game-overlay transparency, click-through or exclusive-fullscreen coverage.
 
@@ -151,6 +157,19 @@ or disconnected. Theater and fullscreen are separate modes. Page-element
 fullscreen includes the playback bar; Safari's video-only fullscreen uses
 system controls and native video events to reflect playback and exit.
 Identity, connection details and topology stay in the deck.
+Room tools outside the fullscreen player close when it enters fullscreen.
+Returning a detached tool during fullscreen keeps it closed in the page; leaving
+fullscreen allows reopening it with its session and draft intact. The fullscreen
+bar retains the danmaku toggle, not an interaction-window entry.
+
+Viewer playback settings reuse shared controls in an anchored popover;
+placement follows the [visual language](./visual-language.md) without resizing video. Local picture
+fit defaults to contain; cover preserves proportions and may crop edges, while
+stretch fills the player by changing proportions. These choices do not change
+capture or encoding. Remote input and magnification use the same rendered
+picture geometry. Incoming-route choice follows the
+[routing contract](./routing-transport.md#viewer-route-choice); its selected value
+is server-acknowledged intent, not evidence of the currently playing route.
 
 Replacement video bindings do not consult Viewer-local pause: when the Host is
 playing, they attempt playback subject to browser autoplay permission. There is
@@ -162,22 +181,32 @@ audio consumer; it preserves current-frame proof and Viewer-local playback.
 A pending `play()` canceled by pause or rebinding is not a media failure;
 cancellation alone must not invalidate frame proof or disable local playback.
 
-The bar spans the screen's lower edge, preferring one row. Narrow screens shorten
-the volume slider and compact horizontal spacing and button widths, retaining
-44px control height and all actions; the percentage readout hides on narrow
-screens. If the control groups cannot fit, they wrap without overlapping.
+The bar floats at the picture's lower edge. Narrow screens shorten the volume
+slider and move secondary display actions into settings, preserving one row and
+44px control height; the percentage readout hides on narrow screens.
 Playing video hides the bar
 after two idle seconds, following [Media Chrome's default](https://github.com/muxinc/media-chrome/blob/main/docs/src/pages/docs/en/components/media-controller.md#autohide).
 Pause or unavailable playback keeps it visible. Control hover, keyboard focus,
-dragging and an open tooltip hold it open; mouse movement reveals it, and a
-touch tap on the picture toggles only visibility. One presentation-only idle
-timer owns visibility; it never changes playback or route state. Controls
+dragging and an open tooltip hold it open. Mouse movement reveals it;
+a touch tap on the picture toggles only visibility. Remote input owns picture
+clicks and movement, so use the bezel pull during control; pointer-locked input
+also never reveals the toolbar through mouse movement.
+One presentation hook owns visibility for the current player, using one idle
+timer; it never changes playback or route state. Controls
 follow the shared [motion grammar](./visual-language.md#motion-grammar).
 
-A desktop primary click on the picture toggles local playback after a brief
-double-click window; double-click toggles the available fullscreen action without
-first toggling playback. Controls, overlays and keyboard actions keep their own
-immediate behavior.
+A picture click does not pause playback; the playback button and focused-video
+keyboard shortcut own that action. Desktop double-click toggles the available
+fullscreen action. Remote-control input consumes its own clicks and key presses;
+controls and overlays keep their own immediate behavior.
+
+Host source-audio feedback describes the selected source independently of Host
+microphone commentary. Viewer sound controls require a received audio track and,
+when the Host supplies input availability, an available source or microphone
+input. With no input, sound controls are disabled with the no-audio explanation;
+the Viewer's volume and mute preferences remain intact for audio returning.
+Older Hosts without this fact retain received-track feedback. These controls do
+not infer input presence from silence or change capture, transport or relay audio.
 
 Volume starts on native audio output. An explicit setting away from 100% activates
 a local Web Audio stream source and gain, from silence to 200% amplitude. This also

@@ -1,4 +1,5 @@
 import { PawnSvg } from "../components/living/Pawn";
+import type { VideoFit } from "../media/video-geometry";
 import {
   useEffect,
   useMemo,
@@ -17,6 +18,7 @@ import {
   type PreparedRouteCandidate,
   type ServerMessage,
   type RoutePolicy,
+  type ViewerRoutePreference,
 } from "../../shared/protocol";
 import {
   viewerReconnectRoute,
@@ -25,7 +27,7 @@ import {
 import { AppHeader, LedStrip } from "../components/living/Header";
 import type { CouchEntry } from "../components/living/Couch";
 import { RoomInteractions } from "../components/living/RoomInteractions";
-import { RoomChatOverlay, RoomChatToggle } from "../components/living/RoomChatOverlay";
+import { RoomChatOverlay, RoomChatOverlaySettings, RoomChatToggle } from "../components/living/RoomChatOverlay";
 import type { RoomInteractionSession } from "../lib/room-interactions";
 import { getRuntimeCapabilities } from "../lib/api";
 import { participantColor } from "../components/living/participant-color";
@@ -41,6 +43,8 @@ import {
 import { StatusIndicator } from "../components/living/StatusIndicator";
 import { Tooltip } from "../components/living/Tooltip";
 import { PlaybackControls } from "../components/living/PlaybackControls";
+import { RemoteControl } from "../components/living/RemoteControl";
+import { InputRoute } from "../remote-control/input-route";
 import { useTheaterMode } from "../components/living/use-theater-mode";
 import { LoadingStatus } from "../components/living/WaitingStatus";
 import {
@@ -63,6 +67,7 @@ import { deriveViewerStatus, deriveParticipantStatus } from "../ui/media-status"
 import { clearViewerGrant, getStableClientId } from "../lib/session";
 import { createOpaqueId } from "../lib/opaque-id";
 import { SignalingClient } from "../lib/signaling";
+import { readRoomPreferences, saveRoomPreferences } from "../lib/room-preferences";
 import { labelParticipantSnapshot } from "../lib/viewer-presence";
 import {
   P2pQualityProbe,
@@ -188,6 +193,8 @@ export function ViewerPage({
     null,
   );
   const [peerSnapshot, setPeerSnapshot] = useState<PeerSnapshot | null>(null);
+  const [, refreshInput] = useState(0);
+  const inputRoute = useMemo(() => new InputRoute(() => refreshInput(value => value + 1)), []);
   const [sfuUpstream, setSfuUpstream] = useState<SfuUpstreamState | null>(null);
   const [assignedRoute, setAssignedRoute] = useState<{
     revision: number;
@@ -202,6 +209,7 @@ export function ViewerPage({
   const [showConnectionDetails, setShowConnectionDetails] = useState(false);
   const [showTopology, setShowTopology] = useState(false);
   const [theaterMode, setTheaterMode] = useTheaterMode();
+  const [audioAvailable, setAudioAvailable] = useState<boolean | null>(null);
   const [hasCustomDisplayName, setHasCustomDisplayName] = useState(
     () => readStoredDisplayName() !== null,
   );
@@ -264,6 +272,13 @@ export function ViewerPage({
   const viewerSfuRouteRef = useRef<ViewerSfuRoute | null>(null);
   const signalRef = useRef<SignalingClient | null>(null);
   const [interactionSession, setInteractionSession] = useState<RoomInteractionSession | null>(null);
+  const [pictureFit, setPictureFit] = useState<VideoFit>(() => readRoomPreferences().pictureFit);
+  const [routeOptions, setRouteOptions] = useState<{ sfu: boolean; sfuOnly: boolean } | null>(null);
+  const [routePreference, setRoutePreference] = useState<ViewerRoutePreference>("auto");
+  const [routePreferencePending, setRoutePreferencePending] = useState(false);
+  const [routePreferenceRejected, setRoutePreferenceRejected] = useState(false);
+  const [peerOnly, setPeerOnly] = useState(false);
+  useEffect(() => { if (signalStatus !== "connected") setRoutePreferencePending(false); }, [signalStatus]);
   const presentationStateRef = useRef(presentationState);
   presentationStateRef.current = presentationState;
   function dispatchPresentation(action: ViewerPresentationAction): void {
@@ -606,8 +621,18 @@ export function ViewerPage({
       },
     );
     setInteractionSession(null);
+    setRouteOptions(null);
+    setAudioAvailable(null);
     void getRuntimeCapabilities().then(capabilities => {
-      if (active && capabilities.roomInteractions) setInteractionSession(signal.enableRoomInteractions());
+      if (active && capabilities.audioPresence) signal.enableAudioPresence();
+      if (active && capabilities.roomInteractions) setInteractionSession(signal.enableRoomInteractions(capabilities.roomReactionIds));
+      if (active && capabilities.remoteInput) inputRoute.enable(identity => signal.send({ type: "subscribe-remote-input", ...identity }));
+      if (active && capabilities.viewerRouteSelection) {
+        const saved = readRoomPreferences().routePreference;
+        const allowed = saved === "sfu" ? capabilities.sfu : saved !== "p2p" || !capabilities.sfuOnly;
+        signal.enableViewerRouteSelection(allowed ? saved : "auto");
+        setRouteOptions({ sfu: capabilities.sfu, sfuOnly: capabilities.sfuOnly === true });
+      }
     }).catch(() => { /* Optional room data never blocks viewing. */ });
     signalRef.current = signal;
     const qualityEvidenceReporter = new ViewerQualityEvidenceReporter(
@@ -772,6 +797,7 @@ export function ViewerPage({
         currentIceConfig,
         currentQualitySettings,
         {
+          onInputChannel: (channel, connection) => inputRoute.attachChild(channel, connection),
           sendSignal: (targetPeerId, payload) =>
             active
               ? signal.send({
@@ -939,6 +965,7 @@ export function ViewerPage({
       }
       let route: ViewerSfuRoute;
       route = new ViewerSfuRoute(currentPeerId!, {
+        onInputChanged: () => refreshInput(value => value + 1),
         activatePeer: async (assignment, revision) => {
           if (!active || viewerSfuRoute !== route) {
             return;
@@ -1474,7 +1501,14 @@ export function ViewerPage({
       message: ServerMessage,
       authorityToken: number,
     ): Promise<void> {
+      if (message.type === "viewer-route-preference") {
+        setRoutePreference(message.preference);
+        setRoutePreferencePending(false);
+        setRoutePreferenceRejected(!message.accepted);
+        return;
+      }
       if (message.type === "authenticated") {
+        inputRoute.reauthenticate();
         dispatchPresentation({ type: "access", access: "ready" });
         setViewerPasswordDraft("");
         setViewerPasswordError(null);
@@ -1490,6 +1524,7 @@ export function ViewerPage({
         viewerAuthorizationGeneration =
           message.viewerAuthorizationGeneration;
         currentRoutePolicy = message.routePolicy;
+        setPeerOnly(message.routePolicy.peerOnly);
         const nextRouteRevision = message.routeRevision;
         if (nextRouteRevision !== currentRouteRevision) {
           relayChildEvidenceStore.clear();
@@ -1660,6 +1695,7 @@ export function ViewerPage({
         ) {
           currentShareGeneration = message.shareGeneration;
           currentRoutePolicy = message.routePolicy;
+          setPeerOnly(message.routePolicy.peerOnly);
         }
         return;
       }
@@ -1729,6 +1765,10 @@ export function ViewerPage({
         );
         return;
       }
+      if (message.type === "audio-presence") {
+        setAudioAvailable(message.available);
+        return;
+      }
       if (message.type === "host-status") {
         currentHostOnline = message.online;
         if (currentHostPaused !== message.paused && message.paused) {
@@ -1755,6 +1795,7 @@ export function ViewerPage({
         return;
       }
       if (message.type === "sharing-stopped") {
+        setAudioAvailable(null);
         invalidatePresentedMedia();
         currentRouteAssignment = null;
         currentRouteConnectionId = null;
@@ -1828,6 +1869,7 @@ export function ViewerPage({
       }
       relayChildEvidenceStore.clear();
       signal.stop();
+      inputRoute.dispose();
       clearParticipantPresence();
       if (signalRef.current === signal) {
         signalRef.current = null;
@@ -1848,6 +1890,10 @@ export function ViewerPage({
       releaseNativeClient();
     };
   }, [roomId, viewerGrant, viewerPasswordAttempt]);
+
+  useEffect(() => {
+    inputRoute.setUpstream(peerRef.current?.getRemoteInput?.() ?? viewerSfuRouteRef.current?.getRemoteInput() ?? null);
+  });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -2194,6 +2240,7 @@ export function ViewerPage({
           >
             <video
               ref={videoRef}
+              style={{ objectFit: pictureFit }}
               autoPlay
               tabIndex={0}
               inert={!remoteMedia}
@@ -2214,10 +2261,31 @@ export function ViewerPage({
               onEnded={invalidateQualityPresentation}
             />
             <PlaybackControls
-              extraActions={<RoomChatToggle session={interactionSession} />}
+              overlayAction={<RoomChatToggle session={interactionSession} />}
+              overlaySettings={interactionSession && <RoomChatOverlaySettings session={interactionSession} />}
+              remoteActions={<RemoteControl channel={inputRoute.current} videoRef={videoRef}
+                  pictureFit={pictureFit}
+                  available={presentation.overlay === "none" && presentation.hasCurrentFrame} />}
+              settings={{ pictureFit, setPictureFit: fit => {
+                setPictureFit(fit); saveRoomPreferences({ pictureFit: fit });
+              },
+                route: routeOptions ? {
+                  preference: routePreference, sfuAvailable: routeOptions.sfu && !peerOnly,
+                  sfuOnly: routeOptions.sfuOnly, peerOnly,
+                  disabled: signalStatus !== "connected" || routePreferencePending,
+                  rejected: routePreferenceRejected,
+                  onChange: preference => {
+                    if (signalRef.current?.setViewerRoutePreference(preference)) {
+                      saveRoomPreferences({ routePreference: preference });
+                      setRoutePreferencePending(true); setRoutePreferenceRejected(false);
+                    }
+                  },
+                } : undefined,
+              }}
               videoRef={videoRef}
               stream={remoteMedia?.stream ?? null}
               audioTrackKey={remoteMedia?.audioTrackKey}
+              audioAvailable={audioAvailable}
               theaterMode={theaterMode}
               onToggleTheater={() => setTheaterMode((current) => !current)}
               onReconnect={retryConnection}

@@ -1373,38 +1373,59 @@ func TestRouterKeepsPeerOnlySharesOutOfConfiguredSfuFallback(t *testing.T) {
 }
 
 func TestRouterSilentlyKeepsWorkingMediaWhenQualityOnlySfuAdmissionIsDenied(t *testing.T) {
-	h := newRouterHarness(t, routerHarnessOptions{capacity: 1, withSfu: true, sfuIngressCapacity: 1})
+	debug := captureRouteDebug(t)
+	h := newRouterHarness(t, routerHarnessOptions{capacity: 2, withSfu: true, sfuIngressCapacity: 1})
 	occupied := sfu.ResourceFence{RoomID: "9001", ShareGeneration: "occupied_share_12345678", PublicationGeneration: "occupied_publication_12345678"}
 	created := h.createRoom()
 	host := h.connectHost(created, qualityPolicy, "", "")
-	viewer := h.connectViewer(created, "quality-sfu-denied")
 	h.locked(func() {
 		if !h.admission.ReservePublication(occupied) {
 			t.Fatal("the occupying publication must be reserved")
 		}
 		h.doComplete(host)
-		h.doComplete(viewer)
 	})
-	prepared := h.waitPrepared(viewer.sessionID)
-	var active activeViewerMediaEdge
-	h.locked(func() {
-		h.doReady(viewer, int64(prepared.Revision))
-		active = h.doMustEdge(created.RoomID, viewer.peerID)
-		for index, state := range []string{"healthy", "degraded"} {
-			if !h.router.observeSenderQualityEvidence(host, senderEvidenceMessage(viewer.peerID, active.connectionID, "viewer-rtp", "track", float64(100+index), active.revision, state)) {
-				t.Fatalf("%s evidence must be accepted", state)
+	viewers := []authenticatedRouteParticipant{
+		h.connectViewer(created, "quality-sfu-denied-first"),
+		h.connectViewer(created, "quality-sfu-denied-second"),
+	}
+	active := make([]activeViewerMediaEdge, len(viewers))
+	for index, viewer := range viewers {
+		h.complete(viewer)
+		prepared := h.waitPrepared(viewer.sessionID)
+		h.routeReady(viewer, int64(prepared.Revision))
+		active[index] = h.mustActiveEdge(created.RoomID, viewer.peerID)
+	}
+	degrade := func(viewer authenticatedRouteParticipant) {
+		h.locked(func() {
+			edge := h.doMustEdge(created.RoomID, viewer.peerID)
+			for index, state := range []string{"healthy", "degraded", "degraded", "degraded"} {
+				if !h.router.observeSenderQualityEvidence(host, senderEvidenceMessage(viewer.peerID, edge.connectionID, "viewer-rtp", "track", float64(100+index), edge.revision, state)) {
+					t.Fatalf("%s evidence must be accepted", state)
+				}
+			}
+		})
+	}
+	// SFU relief requires every Host root to be persistently degraded. Exhaust
+	// the second root's regeneration before the first makes SFU eligible.
+	degrade(viewers[1])
+	regeneration := h.waitPreparedAbove(viewers[1].sessionID, active[1].revision)
+	h.routeFailed(viewers[1], routeFailedMessage(int64(regeneration.Revision), "prepare", regeneration.Candidate.ConnectionID))
+	h.settle()
+	degrade(viewers[0])
+	h.waitFor("the quality-only SFU admission rejection", func() bool {
+		return debug.calledWith(created.RoomID, "candidate-preparation-denied", map[string]any{"rejectionBucket": "sfu-admission"})
+	})
+	h.settle()
+	for index, viewer := range viewers {
+		for _, message := range h.messages(viewer.sessionID) {
+			if _, ok := message.(protocol.RouteStatusMessage); ok {
+				t.Fatal("a denied quality-only candidate must stay silent")
 			}
 		}
-	})
-	h.waitFor("the quality operation to settle", func() bool { return h.diagnostic(created.RoomID).Operation == nil })
-	for _, message := range h.messages(viewer.sessionID) {
-		if _, ok := message.(protocol.RouteStatusMessage); ok {
-			t.Fatal("a denied quality-only candidate must stay silent")
+		if edge := h.mustActiveEdge(created.RoomID, viewer.peerID); edge.connectionID != active[index].connectionID ||
+			edge.upstream != protocol.PeerUpstream(host.peerID) {
+			t.Fatalf("working media changed: %+v", edge)
 		}
-	}
-	if edge := h.mustActiveEdge(created.RoomID, viewer.peerID); edge.connectionID != active.connectionID ||
-		edge.upstream != protocol.PeerUpstream(host.peerID) {
-		t.Fatalf("working media changed: %+v", edge)
 	}
 	h.locked(func() {
 		h.admission.BeginDrain(occupied)
@@ -1968,6 +1989,52 @@ func TestRouterOrdersExactPrepareCommitsOnlyChildProofAndRollsBackAboveP(t *test
 	if active, _ := h.activeAfter(second.sessionID, int64(secondPrepare.Revision)); int64(active.Revision) <= int64(secondPrepare.Revision) {
 		t.Fatalf("rollback revision = %d", active.Revision)
 	}
+}
+
+func TestRetiredPumpPreservesReplacementShareResourceWaiter(t *testing.T) {
+	h := newRouterHarness(t, routerHarnessOptions{capacity: 1, withSfu: true, sfuIngressCapacity: 1})
+	created := h.createRoom()
+	host := h.connectHost(created, nil, "", "")
+	viewer := h.connectViewer(created, "replacement-waiter")
+	occupied := sfu.ResourceFence{RoomID: "9001", ShareGeneration: "occupied-share", PublicationGeneration: "occupied-publication"}
+	h.locked(func() {
+		h.router.sfuOnly = true
+		if !h.admission.ReservePublication(occupied) {
+			t.Fatal("reserve occupied publication")
+		}
+		h.router.connectParticipant(host)
+		h.router.connectParticipant(viewer)
+		old, _ := h.router.rooms.Get(created.RoomID)
+		old.pumping = true
+		controller := old.controller
+		revision := controller.Revision()
+		// Suspend the same queued remainder as requestPump, allowing the new
+		// share to acquire the authority mutex before the old driver resumes.
+		pending := h.router.pumpRoom(created.RoomID, old, controller, &revision, nil, true)
+		if pending == nil || !pending.result.denied {
+			t.Fatal("expected queued denied candidate")
+		}
+		h.router.stopRoom(created.RoomID)
+		h.router.connectParticipant(host)
+		replacement, _ := h.router.rooms.Get(created.RoomID)
+		replacementRevision := replacement.controller.Revision()
+		h.router.pumpRoom(created.RoomID, replacement, replacement.controller, &replacementRevision, nil, false)
+		if !h.router.resourceWaiters.Has(created.RoomID) {
+			t.Fatal("replacement did not wait")
+		}
+		h.router.inflight++
+		go h.router.drivePump(created.RoomID, old, controller, revision, pending, false)
+	})
+	h.settle()
+	h.locked(func() {
+		if !h.router.resourceWaiters.Has(created.RoomID) {
+			t.Fatal("retired pump erased the replacement share's SFU waiter")
+		}
+		h.admission.BeginDrain(occupied)
+		h.admission.CompleteDrain(occupied)
+		h.router.wakeResourceWaiters()
+	})
+	h.waitPreparedTransport(viewer.sessionID, "sfu")
 }
 
 func TestRouterCreatesOneHostPublicationAndReusesExactViewerSubscriptions(t *testing.T) {

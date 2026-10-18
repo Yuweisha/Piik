@@ -1,7 +1,8 @@
 import { interactionPayloadSchema, type ClientMessage, type ServerMessage, type InteractionPayload } from "../../shared/protocol";
-import { INTERACTION_INTERVAL_MS, REACTION_DURATION_MS } from "../../shared/room-interactions";
+import { BASELINE_REACTION_IDS, INTERACTION_INTERVAL_MS, REACTION_DURATION_MS, REACTION_IDS, type ReactionId } from "../../shared/room-interactions";
 import { createOpaqueId } from "./opaque-id";
 import { identityHash } from "./identity-hash";
+import { CHAT_OVERLAY_LIMITS, readRoomPreferences, saveRoomPreferences } from "./room-preferences";
 
 export type RoomInteraction = Omit<Extract<ServerMessage, { type: "room-interaction" }>, "payload"> & {
   payload: InteractionPayload;
@@ -10,10 +11,10 @@ type Rejection = Extract<ServerMessage, { type: "room-interaction-rejected" }>["
 export type InteractionError = Rejection | "offline" | "unconfirmed";
 export const CHAT_OVERLAY_DURATION_MS = 6000;
 export const CHAT_HISTORY_LIMIT = 1000;
-export const CHAT_OVERLAY_LIMITS = { scale: [.8, 1.3], opacity: [.4, 1] } as const;
 type OverlayAppearance = { scale: number; opacity: number };
 const CHAT_OVERLAY_LANES = 3;
 interface InteractionState {
+  reactionIds: readonly ReactionId[];
   ready: boolean;
   peerId: string | null;
   messages: (RoomInteraction & { isSelf: boolean })[];
@@ -26,7 +27,7 @@ interface InteractionState {
   coolingDown: boolean;
   error: InteractionError | null;
 }
-const initialState = (): InteractionState => ({ ready: false, peerId: null, messages: [], reactions: [],
+const initialState = (): InteractionState => ({ reactionIds: BASELINE_REACTION_IDS, ready: false, peerId: null, messages: [], reactions: [],
   overlayEnabled: false, overlayAppearance: { scale: 1, opacity: 1 }, overlayMessages: [],
   pending: null, confirmed: null, coolingDown: false, error: null });
 
@@ -45,7 +46,16 @@ export class RoomInteractionSession {
   private subscriptionStartedAt: number | null = null;
   private serverOffset = 0;
 
-  constructor(private readonly sendMessage: (message: ClientMessage) => boolean, readonly now = Date.now) {}
+  constructor(private readonly sendMessage: (message: ClientMessage) => boolean, readonly now = Date.now, reactionIds?: readonly string[]) {
+    const { overlayEnabled, overlayAppearance } = readRoomPreferences();
+    this.state = { ...this.state, overlayEnabled, overlayAppearance };
+    this.setSupportedReactions(reactionIds);
+  }
+
+  setSupportedReactions(reactionIds: readonly string[] = BASELINE_REACTION_IDS): void {
+    if (this.closed) return;
+    this.update({ reactionIds: REACTION_IDS.filter(id => reactionIds.includes(id)) });
+  }
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -121,7 +131,8 @@ export class RoomInteractionSession {
 
   send(payload: InteractionPayload): boolean {
     if (this.closed || !this.state.ready || this.state.pending || this.state.coolingDown ||
-      !interactionPayloadSchema.safeParse(payload).success) return false;
+      !interactionPayloadSchema.safeParse(payload).success ||
+      payload.kind === "reaction" && !this.state.reactionIds.includes(payload.reaction)) return false;
     const requestId = createOpaqueId();
     try {
       if (!this.sendMessage({ type: "send-room-interaction", requestId, payload })) {
@@ -141,6 +152,7 @@ export class RoomInteractionSession {
   setOverlayEnabled(enabled: boolean) {
     if (this.closed || this.state.overlayEnabled === enabled) return;
     this.update({ overlayEnabled: enabled, overlayMessages: [] });
+    saveRoomPreferences({ overlayEnabled: enabled });
     this.expireEffects();
   }
 
@@ -157,6 +169,7 @@ export class RoomInteractionSession {
       scale: Math.min(CHAT_OVERLAY_LIMITS.scale[1], Math.max(CHAT_OVERLAY_LIMITS.scale[0], appearance.scale)),
       opacity: Math.min(CHAT_OVERLAY_LIMITS.opacity[1], Math.max(CHAT_OVERLAY_LIMITS.opacity[0], appearance.opacity)),
     } });
+    saveRoomPreferences({ overlayAppearance: this.state.overlayAppearance });
   }
 
   private expireEffects() {

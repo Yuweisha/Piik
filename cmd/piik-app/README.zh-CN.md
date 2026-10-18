@@ -6,8 +6,9 @@ Piik App 通过系统浏览器中的 Piik 网页界面，提供本地房间与�
 
 ## 运行程序包
 
-完整解压对应平台的程序包，保留 App 程序旁的 `runtime` 目录。
-Windows 运行 `piik-app.exe`，Linux 运行 `./piik-app`，macOS 打开 `Piik App.app`。
+完整解压对应平台的程序包。Windows 和 Linux 保留 App 程序旁的 `runtime` 目录，
+分别运行 `piik-app.exe` 或 `./piik-app`。
+macOS 打开 `Piik App.app`，也可以将整个 `.app` 移到「应用程序」。
 启动页会在系统浏览器中打开。Linux 原生采集所需的系统依赖见
 [Linux 采集指南](../../native/capture/linux/README.md)。
 
@@ -172,7 +173,8 @@ Darwin 组装需要原生 macOS runner 与 SDK，并启用 cgo；Windows 与 Lin
 结果是 ZIP 程序包和 SHA-256 文件。手动组装辅助程序、显式 CI 打包、Release 发布与更新，
 见[部署与发布](../../docs/deployment.md)；创建候选包不会将它发布。
 
-解压后的目录包含：
+App 运行目录包含以下文件。macOS 下它们位于
+`Piik App.app/Contents/MacOS`，安装时移动整个 `.app` 即可。
 
 ```text
 piik-app[.exe]
@@ -194,7 +196,8 @@ App 与站点之间的互操作遵循[公开兼容规则](../../docs/standards/v
 Windows App 通过 `cmd/piik-app/piik_windows_amd64.syso` 资源内嵌共享的 Piik 标识；
 平台后缀使该 Windows 资源不参与 Linux 和 macOS 构建。
 Linux 程序包包含标准的 `share/applications` 桌面入口与 hicolor 图标。
-macOS 程序包包含一个带 ICNS 资源的轻量 `Piik App.app` 启动器，原始 Go 程序仍保留在它旁边。
+macOS 的 `Piik App.app` 包含 ICNS 图标、App 程序及其辅助程序。
+需要从终端运行时，入口为 `"Piik App.app/Contents/MacOS/piik-app"`。
 
 图标源文件为 [public/favicon.svg](../../public/favicon.svg)。
 将它按 16/24/32/48/64/128/256 px 导出为 PNG 图层，写入 `cmd/piik-app/piik.ico`；

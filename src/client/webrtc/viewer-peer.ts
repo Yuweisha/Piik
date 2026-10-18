@@ -1,4 +1,5 @@
 import type { CopyKey } from "../ui/copy";
+import { RemoteInputChannel } from "./remote-input-channel";
 import type { IceConfig, SignalPayload } from "../../shared/protocol";
 import { debugError } from "../lib/debug";
 import { observeDebugConnection } from "../lib/debug-webrtc";
@@ -68,6 +69,7 @@ export function createViewerRecoveryBudget(): ViewerRecoveryBudget {
 }
 
 export interface ViewerMediaPeer {
+  getRemoteInput?(): RTCDataChannel | null;
   acceptSignal(parentPeerId: string, payload: SignalPayload): Promise<void>;
   updateIceConfig(iceConfig: IceConfig): void;
   requestRecovery(rebuild?: boolean): boolean;
@@ -85,6 +87,8 @@ export interface ViewerMediaPeer {
 }
 
 export class ViewerPeer implements ViewerMediaPeer {
+  private readonly remoteInput = new RemoteInputChannel(() => this.emit());
+  getRemoteInput(): RTCDataChannel | null { return this.remoteInput.current; }
   private connection: RTCPeerConnection | null = null;
   private connectionLifetime: AbortController | null = null;
   private connectionId: string | null = null;
@@ -300,6 +304,7 @@ export class ViewerPeer implements ViewerMediaPeer {
       ),
     );
     this.connection = connection;
+    this.remoteInput.attach(connection);
     this.connectionLifetime = new AbortController();
     this.localIceCandidates = localIceCandidates;
     this.snapshot = {
@@ -729,6 +734,7 @@ export class ViewerPeer implements ViewerMediaPeer {
   }
 
   private disposeConnection(): void {
+    this.remoteInput.dispose();
     this.clearDisconnectTimer();
     this.clearInitialConnectionTimer();
     this.clearRecoveryTimer();

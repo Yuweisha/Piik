@@ -1,7 +1,7 @@
 # Visual Language
 
 This is the single design requirement for Piik's shared Web/App interface:
-illustration, semantic colour, panel grammar, motion and tooltip presentation.
+control/surface selection, illustration, semantic colour, motion and guidance.
 New UI work follows this file and the local `/__tooltip-preview` catalogue.
 [Media status](./media-status.md) owns which facts justify each status;
 [presentation lifecycle](./presentation-lifecycle.md) owns interaction
@@ -59,18 +59,83 @@ Keep existing controls in their established positions as a room becomes active.
 Represent missing room identity with a passive placeholder in its own slot;
 do not move unrelated controls into that space to fill an empty state.
 
+### Control Selection
+
+Choose by the user's task, then reuse its interaction and visual primitive.
+A sliding selection track shows a discrete choice; a range slider adjusts a
+number. Similar shapes do not make their responsibilities interchangeable.
+
+| Task | Control and existing owner |
+| --- | --- |
+| Perform an action or open a tool | `Btn`; use a stable caption and `aria-expanded` for disclosures |
+| Turn a setting on or off immediately | `SwitchItem`; compact toolbar actions such as mute use a pressed `Btn` |
+| Select independent options within a task | Native checkboxes or independent pressed `Chip`s, such as held modifier keys; a selection awaiting Apply must not look like a committed setting |
+| Choose a short, fixed mode | Shared `.lr-toggle` sliding selection; option chips/cards when individual choices need explanations, richer previews or wrapping |
+| Switch related content pages | A named tablist with one selected tab and its associated panel; use the shared sliding treatment for short labels, including capture categories, and `navigateTabs` for Arrow/Home/End navigation |
+| Pick a device or an item from a variable list | Existing named selector/menu; use source thumbnails when appearance helps identify the item |
+| Adjust a numeric value | Range slider for quick adjustment, with a visible value; reuse `QualityNumberControl` when exact entry or a wider accepted range is useful |
+| Apply several settings together | A named preset tile/chip; allow no preset to be selected when the current values are custom |
+
+Selection, expansion and pending operations describe different facts. Use the
+appropriate native/ARIA semantics even when controls share their styling.
+Button labels and drag handles are not selectable text, including on touch
+browsers. Keep message text and editors selectable. Held-input controls own
+release on pointer-up, cancellation, lost capture and surface blur; a browser
+callout must not consume that gesture.
+Tab navigation keeps focus in the tablist and preserves drafts/settings; the
+navigation key must not become a remote keystroke or start capture. Existing
+resource cleanup still applies. Value changes keep their domain owner's commit
+behavior. A `RowGroup` arranges controls; it does not own their selection.
+
+### Surface Selection
+
+Choose the smallest surface that supports the task's duration and relationship
+to the picture. Movable and detachable are separate capabilities, not upgrades
+that every popup should acquire.
+
+| Task | Surface and existing owner |
+| --- | --- |
+| Read a brief explanation | Shared `Tooltip`; no settings or required actions hidden in a hint |
+| Adjust a few contextual settings | Attached native popover with `useAnchoredPopover`; dismiss after use, no dragging or detaching |
+| Work through related settings | Inline disclosure or tabs, as in `SharingSettings`; expand into page flow rather than cover the picture |
+| Complete a task that blocks the page | Existing native modal dialog, such as share-failure help; contain focus and return it on close |
+| Choose a source inside the television | TV-local nonmodal dialog; keep its own Tab loop, inner guidance before Escape cancellation, and return focus to the current share action on close. Surrounding room controls remain available to the pointer |
+| Keep a room tool available while watching or working | `FloatingPanel`, as used for interactions and Host remote permissions; retain its position without reflowing the room |
+| Use a tool outside the page | Optional `usePanelWindow` on capable browsers; reuse the same content/session, as with interactions, remote permissions and the docked remote keyboard |
+
 Persistent room utilities use the shared floating panel without reflowing the
 living room. The shell owns visibility, focus return, movement, resizing and
 viewport/keyboard bounds; contents retain their domain state. Support title-bar
-dragging and keyboard placement. An interaction palette starts beside its chosen
+dragging, corner resizing and equivalent keyboard controls without a second
+placement menu. An interaction palette starts beside its chosen
 participant, stays open after sending and keeps its position when retargeted.
-One-shot settings and guidance retain their existing disclosures. Escape closes
+One-shot settings and guidance retain their existing disclosures. Anchored
+menus use native popovers and shared viewport placement; a small parent panel
+must not clip their actions. Browsers without the Popover API use one shared
+platform polyfill installed before UI mounting; controls retain the same
+visibility, focus and dismissal contract. Escape closes
 inner guidance first, then the most recently opened floating panel, then theater
 mode; an IME composition must not dismiss these surfaces.
-Detached chat uses the same content in the browser's own always-on-top frame.
+The interaction window gives conversation the main space and keeps one stable
+composer. Its reaction entry or a current participant's message avatar reveals
+the same compact recipient strip and shared palette above the input. The tray
+takes space from the scrollable message list without covering it; neither a
+permanent roster nor a second target heading competes with messages. More
+recipients scroll within that strip. Keep the composer in place while picking,
+and preserve the draft and reading position.
+Live reactions can appear briefly in the conversation surface without moving its
+layout. Retention and export details belong in settings, not beside every entry.
+Detachable tools reuse the same content in the browser's own always-on-top frame.
 Close, return-to-tab, movement and resizing belong to that frame; do not duplicate
-its controls in the compact chat header. Keep messages and text contrast
+its controls in the tool header. Keep messages and text contrast
 primary; do not simulate transparent desktop content with a washed-out panel.
+Moving or detaching changes the surface, not the domain owner or protocol.
+Request the tool's current rendered size when detaching, within browser window
+limits. The native title bar replaces the floating panel's header; keep body
+spacing and control sizes consistent with the in-page tool.
+Reuse visibility, placement, dismissal and focus behavior through these existing
+owners; do not give each feature its own window manager. Different layouts are
+justified by task or available space, not by which feature was implemented last.
 
 Keep the application language control's segmented Chinese, English and visual
 shortcuts. When additional catalogs exist, insert one language menu
@@ -82,6 +147,8 @@ control owns menu navigation, focus and viewport placement. Keep touch rows
 large and long lists scrollable. Locale labels belong to the shared registry.
 Use a globe and chevron for the unselected picker, and each language's own full
 name in the menu, following [W3C language-navigation guidance](https://www.w3.org/International/questions/qa-navigation-select).
+
+### Guidance
 
 Help-only indicators toggle their guidance on click or tap and dismiss on a
 second activation, outside tap, Escape or focus leaving. Touch long-press opens
@@ -134,10 +201,20 @@ symbols; related time measurements keep a clock with a scene identifying the
 measured stage. Illustrations explain a metric, never invent its current value,
 threshold or quality verdict.
 
-Shared buttons and chips use pill shapes, a quiet lower edge and a short lift
-on hover or keyboard focus, then compress on press. Inputs and option tiles
-share softer corners. Keep a distinct focus ring and a persistent selected
-state; disabled controls must not pretend to activate. Reduced motion keeps
+### Sharing And Playback
+
+Shared buttons and chips use pill shapes and a quiet lower edge. Standalone
+buttons, chips and option tiles lift 2 px on hover or keyboard focus, sink 2 px
+on press, and spring back over 260 ms on release. Selected and unselected states
+use the same motion; selection changes only their colour and outline.
+Inputs and option tiles share softer corners. Press feedback uses the shared
+motion values in `button.css` and releases the lower shadow. Captions inside
+sliding tracks retain a smaller 1 px lift without moving the track. Keep icon,
+text and control dimensions intact: scaling the whole button shifts off-centre contents
+sideways and changes their stroke weight. Do not add a separate icon displacement.
+Keep filled buttons' border and face in the same colour state; a bright inset
+rim must not look like a gap between them. Keep a distinct focus ring and a
+persistent selected state; disabled controls must not pretend to activate. Reduced motion keeps
 the colour, outline and selected position without decorative displacement.
 The shared button uses the same pressed value for `aria-pressed` and its selected
 treatment; active state remains distinct from hover in both themes.
@@ -150,19 +227,28 @@ and connection details, so inspecting a route does not displace room actions.
 Sharing and local playback controls use the same quiet, compact button treatment.
 The Host's persistent dock stays below the picture; the Viewer's playback bar
 belongs to the video. Their similar appearance does not equate broadcast pause
-with local playback pause. Waiting overlays use the space above the actual
-playback bar, including when it wraps. Keep the primary status readable on
-narrow screens; optional waiting copy yields first. Microphone mute, sharing
-pause, source replacement and stop remain direct actions; stopping stays
-visually separated from frequent actions.
-One compact dock combines direct actions and the sharing-settings entry below
-the television, above the couch. Its disclosure groups quality presets and picture
-parameters with sound and microphone settings; presets remain available before
-sharing starts. Separate the less frequent connection/codec options in a nested
-disclosure. Expand in page flow, pushing later content down instead of covering
-the picture or participants. Keep picture and sound in distinct sections; place
-related adjustments side by side where space permits and stack them on narrow
-screens. Avoid another permanent row of settings cards. Numeric quality inputs
+with local playback pause. A waiting overlay dims the complete picture, including
+behind the playback bar; its message uses the space above that bar. Keep the
+primary status readable on narrow screens; optional waiting copy yields first.
+Microphone mute, sharing pause, source replacement and stop remain direct actions; stop retains its
+danger treatment.
+Group direct sharing actions in one centred dock below the television, above
+the couch. Keep pause/resume and stop adjacent; use an internal separator for
+the settings and remote-permission entries. Preserve that order and grouping on
+narrow screens without splitting the dock into separate floating surfaces.
+Room invitations, admission and chat retain their room scope; they do not become
+sharing settings merely because they use a similar control.
+One inline settings panel uses picture and sound tabs with the shared sliding
+two-option control. Picture presets lead; a fine-tuning disclosure contains
+picture limits, preference and video encoding, keeping configured limits visible
+when closed. In sound,
+source and microphone inputs precede the mixed output's audio quality. Presets
+remain available before sharing starts. Switching tabs does not reset values
+or restart media. Keep the less frequent connection options in a shared
+disclosure below the tabs. Expand in page flow, pushing later content down
+instead of covering the picture or participants. Related fields share a row
+where space permits and stack on narrow screens. Avoid another permanent row
+of settings cards. Numeric quality inputs
 retain the accepted capability range; sliders offer a labelled common range for
 quick adjustment. Values outside its range or steps show a custom-value row
 instead of an inaccurate slider position. Returning to the nearest available
@@ -172,6 +258,29 @@ setting mode. Shared presentation stays separate
 from the existing setting/resource owners.
 The microphone comic depicts Host commentary gain;
 the Viewer's listening-volume comic remains a different action.
+
+The Viewer bar groups local play/volume/overlay, remote mouse/keyboard, then
+settings/display modes, with fullscreen at the outer edge. Quiet dividers mark
+these responsibilities at every width. Show the remote group only when the Host
+offers control; keep both entries in place and enable the keyboard on control grant.
+The capsule floats inside the picture's lower edge with a small inset. Watching
+and remote input share that geometry; granting or ending control never moves it.
+Remote input keeps its own clicks. When controls hide during remote input,
+retain a local pull on the TV bezel, away from the status lamp. Theater and
+fullscreen place it at the screen edge. Ordinary viewing reveals controls on
+mouse movement or a touch tap on the picture, without another button or setting.
+Keep the chat-overlay toggle in the bar; its appearance settings also belong in
+playback settings and reuse the interaction window's controls and local owner.
+Shorten the volume slider before moving display modes into settings; keep the
+bar on one line at supported mobile widths.
+Viewer settings use a brief anchored popover, preferring space below the picture
+without resizing it. Picture fit owns the narrow-screen overflow for display
+modes; incoming-route settings own reconnect. Use equal-width choices and stack
+these groups on narrow screens. Fit, proportional crop and stretch change local
+display only, separate from the Host's picture settings.
+Persistent interaction and remote-permission tools may use the shared floating
+window; the remote keyboard docks outside the picture and can detach on capable
+browsers. One-step actions and brief adjustments do not need movable windows.
 
 Visual source choices (windows, screens and cameras) share named thumbnail cards,
 including their focus, hover and refresh treatment. Thumbnails fit the whole frame
@@ -190,8 +299,15 @@ The App badge and favicons derive from [one SVG](../../public/favicon.svg):
 a dark navy tile, warm white television outline and small gold sparkle. The
 unfilled television, antenna, feet and wink keep the proportions of `BrandMark`;
 do not give the badge a filled case or a separate screen. This palette stays
-fixed across system themes. Keep the badge recognisable at 16–48 px by
-strengthening thin strokes in tiny exports. Inline brand
+fixed across system themes. Let the television fill the tile with optical
+padding so the surrounding tile does not make the mascot look undersized.
+At 16–24 px, strengthen the outline and open eye, and omit the decorative
+sparkle and tile rim. Keep the antenna, feet and wink at every size. Render
+each export at its target viewport; check actual 16/24/32/48 px on light and
+dark backgrounds rather than judging only an enlarged master. This follows
+[Microsoft's small-size silhouette guidance](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-design)
+and [GNOME's detail guidance](https://developer.gnome.org/hig/guidelines/app-icons.html#detail).
+Inline brand
 marks keep the same wink identity with their existing outline and motion.
 Their stroke inherits the local surface's text colour:
 dark ink on light surfaces, light ink on dark surfaces, including deliberately
@@ -211,14 +327,19 @@ changing the badge does not restyle the UI, wordmark or illustrations.
 | A captured window or display | Window title bar or display stand, with the shared media metaphor kept distinct |
 | A camera source or Host commentary | `camera` identifies the alternative picture source; `microphone` identifies the enabled Host voice input and `microphoneOff` its muted state. Neither replaces the speaker metaphor for source/playback sound. |
 | Room text and reactions | `chat` opens the conversation, `danmaku` controls its optional picture overlay, `smile` identifies reactions and `send` submits the chosen content. These do not represent media transport or voice. |
-| Floating utility placement | `grip` marks a draggable title bar; `move` opens placement controls. Closing a panel hides its presentation, not its room session. |
+| Experimental attended desktop control | `mouse` identifies keyboard/mouse control, distinct from sharing or playback. Permission copy stays literal; an active control marker describes the grant, not media connectivity. |
+| Floating utility placement | `grip` marks a draggable title bar; corner handles resize the window. Closing a panel hides its presentation, not its room session. |
 | Server forwarding media | A server on the media path; opening a Site alone does not imply SFU |
 
 These are **identity/object colours**, not status. A green pawn remains green
 in a failed scene; a successful scene does not turn other people green. Real
-roster identities retain the shared UUID colour function, not the illustrative
-"you versus others" palette. Actor positions and identities remain stable from
-the first panel to the result.
+roster identities use the shared UUID colour function to generate stable hues,
+lightness and chroma outside the upholstery/crown's amber range, not a fixed
+list or the illustrative "you versus others" palette. The same identity keeps
+its colour across surfaces, themes and roster changes, without colour-assignment
+messages. Similar colours remain possible; names and self/Host marks identify
+people. Actor positions and identities remain stable from the first panel to
+the result.
 
 Room pawns, tooltip/status comics and introduction participants use
 a round head, half-oval body and two restrained eyes. Reuse the shared
@@ -247,8 +368,9 @@ spacing, then use a vertical outline when depth exceeds the available width.
 Couch upholstery uses the fixed warm orange/yellow `--couch` / `--couch-dark`
 palette. Never draw upholstery from the participant palette or randomize it by
 room. Keep automatic participant colours outside the upholstery's amber/orange
-range and the crown's gold; check all eight tokens against both objects in light
-and dark themes. The crown retains a bright gold fill with a dark gold edge.
+range and the crown's gold; check the generated range against both objects in
+light and dark themes. Fixed illustration colours remain illustration tokens.
+The crown retains a bright gold fill with a dark gold edge.
 Figures and exterior upholstery use flat fills without outline strokes.
 Use differences in tone, spacing and name tags to keep people readable; retain
 only the few interior seams that clarify cushions. Apply this convention to
@@ -285,7 +407,7 @@ type checking rather than silently render a warning triangle.
 | Connections / 连接 | `network`, `branch`, `signal`, `wifiOff`, `server` | Topology, branching, signaling, disconnected signaling and the named server. A server on a media path means forwarding; a Site backend or control-link server alone does not imply SFU. An invitation chain does not represent signaling. |
 | Playback / 播放 | `play`, `pause`, `stop` | Play/resume, pause, end. The control label states whether it affects local viewing or the Host's share. Stop is distinct from a paused or idle room. |
 | Audio / 声音 | `speaker`, `speakerOff` | Audio and mute/no audio, qualified by the source or local playback label. A source track's presence does not establish delivered sound. |
-| Size and viewing mode / 尺寸与观看模式 | `expand`, `contract`, `pip`, `pipExit`, `theater`, `theaterExit` | Expand/restore, enter/leave picture in picture, enter/leave theatre mode. The same size symbol can accompany a resolution measurement. |
+| Size and viewing mode / 尺寸与观看模式 | `expand`, `contract`, `pip`, `pipExit`, `theater`, `theaterExit`, `fitContain`, `fitCover`, `fitStretch` | Expand/restore, enter/leave picture in picture or theatre mode; contain, proportional crop and stretch change only local picture fit. The same size symbol can accompany a resolution measurement. |
 | Local actions / 本地操作 | `copy`, `save`, `pencil`, `eye`, `eyeOff` | Copy, save, edit, reveal and conceal the named object. An action icon does not prove completion. |
 | Text appearance / 文字外观 | `textSize`, `opacity` | Relative text size and opacity. These are local display preferences, not message delivery states. |
 | Repeat and disclosure / 重试与展开 | `refresh`, `chevron`, `arrowRight` | Repeat/refresh, expand/collapse, proceed/enter. Direction follows the control's action; no arrow alone establishes delivery. |
@@ -430,7 +552,29 @@ explained clearly in two; do not invent stages to fill extra panels.
 
 ## Semantic Colour And Shape
 
-Use the existing theme tokens in `src/client/styles.css`. The shared
+App, website and documentation use the shared surface palette in
+`src/client/ui/palette.css`: a fresh pale canvas, warm white paper, blue-grey dark
+surfaces and clear text contrast. Source selection follows the same theme.
+Reserve green for cast identity and semantic state, not the general canvas or
+hover fill. Light mode uses blue for actions, focus and selected controls;
+dark mode keeps navy surfaces with soft-white selection highlights and navy text.
+Primary actions such as starting a share, joining and confirming retain their
+blue fill and white foreground in both themes; theme selection must not erase
+their identity. The active remote-input outline uses that same fixed blue;
+suspended input uses the muted state. Use the shared foreground/background pairs
+for both themes.
+Selected choices use the shared face and inset outline; sliding segments use
+inverse ink/paper with the same accent outline. Subtle surface highlights
+and shadows add depth without changing control geometry or press feedback.
+Gold upholstery, illustration and badge artwork retain their own palettes.
+
+The App terminal keeps its user's terminal background and palette. A compact
+mascot/title block identifies the App and build; state, addresses and available
+shortcut keys form separate reading levels. Use terminal-theme blue for links
+and actions, neutral rules, and the same success/wait/failure colour meanings.
+Preserve monochrome output and compact layouts without changing their behavior.
+
+Use the semantic theme tokens in `src/client/styles.css`. The shared
 `comic-presentation.ts` maps meanings to those tokens for tooltip outlines,
 carets, result panels and verdict marks. Do not choose independent hex colours
 or animation rules inside an individual scene.
@@ -472,9 +616,9 @@ failure; lack of PiP support is a limitation.
 
 | Presentation | Rule |
 | --- | --- |
-| Action demonstration (`demo`) | Explain an action with a short gesture and a readable hold; repeat while its tooltip is displayed |
+| Action demonstration (`demo`) | Explain an action with a short gesture and a readable hold; repeat while displayed |
 | Work actually continuing (`progress`) | Repeat a gentle connection/recovery beat while that state exists |
-| Settled success, failure, limitation, pause or idle (`still`) | Keep the result readable while a related character or object moves; tooltip gestures loop without re-running the actual operation or changing the verdict |
+| Settled success, failure, limitation, pause or idle (`still`) | Keep the result readable while a related character or object moves; gestures loop without re-running the actual operation or changing the verdict |
 
 Demonstrations and progress share the existing 3.2-second comic beat. The main
 action belongs in its first half, followed by a readable hold; small internal
@@ -485,11 +629,12 @@ busier. An explanatory slider describes purpose and available range, not its
 live numeric value.
 Decorative sparkle must support the pictured action, never fake current success.
 
-The shared tooltip owns repetition for hover, keyboard focus and click/tap;
-scene animations inherit its repeat count instead of hard-coding one play.
-Closing guidance pauses and unmounts its scene. The panel entrance plays once;
-its characters and objects keep moving while shown. Standalone settled scenes
-retain their brief gesture, while real progress repeats for its state's lifetime.
+The shared comic presentation owns repetition for tooltips, overlays and
+standalone results; scenes inherit its repeat count. Previews use the same
+rule, without their own animation overrides. Closing guidance pauses and
+unmounts its scene. The panel entrance plays once; its characters and objects
+keep moving while shown. Settled scenes repeat their quiet subject gesture;
+real progress repeats for its state's lifetime.
 
 Reduced motion uses each scene's **explicit informative static pose**. Disabling
 animation alone is insufficient if the base SVG hides the result or shows a
@@ -575,6 +720,25 @@ stationary and manually scrollable instead of discarding the hidden words.
   here instead of copying the palette, cast or animation table.
 
 ## Interaction References
+
+[Radix colour roles](https://www.radix-ui.com/colors/docs/palette-composition/understanding-the-scale)
+separate surfaces, interaction states, borders and text instead of tinting every
+layer with the accent. Native [text selection](https://developer.mozilla.org/en-US/docs/Web/CSS/user-select)
+and [pointer capture](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events)
+support held controls without disabling selection across the whole page.
+
+[Fluent tabs](https://fluent2.microsoft.design/components/web/react/core/tablist/usage),
+[switches](https://fluent2.microsoft.design/components/web/react/core/switch/usage)
+and [sliders](https://fluent2.microsoft.design/components/web/react/core/slider/usage)
+distinguish content navigation, immediate binary settings and numeric adjustment.
+[WAI-ARIA tabs](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)
+defines the shared selection, focus and keyboard contract.
+[GNOME popovers](https://developer.gnome.org/hig/patterns/containers/popovers.html)
+and [utility panes](https://developer.gnome.org/hig/patterns/containers/utility-panes.html)
+distinguish brief contextual adjustments from tools alongside the main view.
+Piik's floating/detached tool choice applies that distinction to watching and
+remote input; [Document Picture-in-Picture](https://developer.chrome.com/docs/web-platform/document-picture-in-picture)
+supplies the optional native window and its lifetime boundary.
 
 [Carbon status indicators](https://v10.carbondesignsystem.com/patterns/status-indicator-pattern/)
 supports combining semantic colour with shape and symbols;

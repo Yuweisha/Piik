@@ -7,8 +7,8 @@ owns ports and [self-hosting](../operations/self-hosting.md) owns service setup.
 
 ## Topology
 
-- Media is automatic and defaults to P2P-first. Users do not select parents, route types, or
-  network transports.
+- Media defaults to automatic P2P-first routing. Viewers may constrain their own
+  incoming hop; parent selection, transport and adaptation remain automatic.
 - The Host is the only source. Every Viewer has at most one active upstream, and
   the committed media graph is acyclic and source-reachable.
 - A Viewer may relay its received Browser track to bounded peer children. This
@@ -27,7 +27,7 @@ background P2P convergence. The Host still publishes once, and every Viewer
 uses the existing SFU subscription ledger and first-frame commit. Capacity or
 connection failure never permits a Peer route. An explicitly peer-only share
 is rejected before acquiring media authority; it is never silently forwarded.
-The page advertises this site policy and hides inapplicable P2P preferences.
+The page advertises this site policy and prevents inapplicable P2P choices.
 
 ## Per-Share Route Policy
 
@@ -69,6 +69,27 @@ sharing. The server-validated route policy remains fixed for that share generati
 These are route-policy gates, not new routing algorithms. Changing any
 policy requires stopping the current share and starting another generation.
 
+## Viewer Route Choice
+
+A capable Site offers `auto | p2p | sfu` for the current viewing session.
+Auto keeps ordinary P2P-first routing; the other choices allow only that kind of
+incoming hop. Host peer-only and site SFU-only policy take precedence. A choice
+does not change room privacy: a P2P parent may itself receive through SFU.
+The server acknowledges the choice and reuses the same bounded serial operation,
+capacity ledger and first-frame commit. Existing media remains during permitted
+preparation; exhaustion retires a disallowed route and reports normal failure.
+Returning to Auto restores eligible direct opportunities. A relay's children
+repair through normal availability routing if its ingress is finally retired.
+Restricting the incoming kind does not remove a Viewer from the graph: eligible
+P2P quality repair and service to downstream children keep their existing owners.
+
+The applied choice survives signaling reconnect and source/share replacement.
+The Viewer's explicit preference is remembered within the Browser origin and
+requested again on capable Sites. An incompatible site or share policy applies
+Auto without overwriting that personal preference. Discovery gates
+the optional command, and replies go only to opted-in Viewers; existing 2.x
+participants retain their established protocol and automatic behavior.
+
 ## Endpoint And Server Capacity
 
 Every non-server endpoint has one server-authoritative steady outbound media-
@@ -103,6 +124,11 @@ converge behind a working SFU route. Relay-ingress failure reparents that relay
 without discarding its subtree; departure and capacity changes move only affected
 children. ADR-0005 owns filtering, ordering, cursor, revision, reservation, and
 rollback mechanics.
+
+Reauthentication rebinds retained media and restores eligible direct opportunities
+behind healthy SFU edges through that same continuation owner. The existing
+session-scoped ledger bounds these attempts; a repeated update of the same
+session does not reopen them.
 
 Five seconds is a scheduling window only while another bounded candidate or SFU
 fallback remains. It advances a silent Peer candidate instead of delaying the

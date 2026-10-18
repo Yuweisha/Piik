@@ -2,7 +2,7 @@
 
 The owner accepted the text/reaction UI and model with bounded local acceptance.
 [Status](../status.md#accepted-interaction-phase) owns release readiness and
-[TODO](../todo.md#now) owns remaining work. Reviewed 2026-10-02.
+[TODO](../todo.md#now) owns remaining work.
 This document records the implementation design and its tradeoffs;
 [rooms and access](../standards/rooms-access.md#room-interactions) owns authority
 and retention, while [presentation and lifecycle](../standards/presentation-lifecycle.md#product-surface)
@@ -54,10 +54,9 @@ ends that service; merely leaving the Host page does not.
   `hostRoomSession`; absence means the corresponding behavior is unavailable.
   The page explicitly subscribes after authentication. Only subscribed current
   sessions receive interaction events. The Host room-session behavior also
-  requires the `roomSession: true` authentication opt-in; older clients retain
-  the original stop-and-leave contract. Existing v23 media messages remain
-  valid, and publication start/result messages are sent only to an opted-in
-  session.
+  requires the `roomSession: true` authentication opt-in; sessions without it
+  retain the stop-and-leave contract. The [public compatibility boundary](../standards/versioning.md#public-compatibility-promise)
+  still applies; publication start/result messages go only to an opted-in session.
 - The viewer discovers this optional capability independently of first-picture
   startup. Late capability discovery enables data on the existing connection.
 - A strict command payload union admits plain chat text or a registered reaction. Chat is
@@ -94,14 +93,13 @@ ends that service; merely leaving the Host page does not.
 
 ## Interaction Design
 
-Chat uses the shared `FloatingPanel` shell for its nonmodal window. The shell
+Chat and reactions use an interaction window in the shared `FloatingPanel` shell. The shell
 owns native visibility, placement, movement, resizing and focus return; the
 conversation retains its session, draft, reading position and unread state.
 It opens initially at the lower right, without
-resizing the picture or moving the couch. Drag its title bar, use arrow keys on
-the focused bar, or explicitly choose a corner under Position. Its summary also
-allows dragging; a drag never activates the menu. Resize from either diagonal
-corner, use arrow keys on a resize handle, or choose a preset under Position.
+resizing the picture or moving the couch. Drag its title bar or use arrow keys on
+the focused bar. Resize from either diagonal corner or use arrow keys on a resize
+handle. These direct controls also work with touch; there is no separate placement menu.
 Resizing holds the opposite corner steady. Size and position belong to this room
 UI only; viewport and keyboard changes bound them without erasing preferences.
 The native manual
@@ -128,12 +126,28 @@ target even after moving the window. Selecting a different participant keeps its
 placement and any manually chosen size; selecting the same person toggles it.
 The default palette height follows its content, bounded by the visible viewport.
 One's own palette expresses a reaction above oneself and holds the local effects switch; other
-people's palettes offer targeted expressions and two labelled throwing props.
+people's palettes offer targeted expressions and two throwing props. The props form
+a compact pair of named action buttons beneath the expression grid, using the
+shared button motion. The same palette serves both the couch and conversation.
 Connection details remain secondary when that participant has inspectable data.
 Close or Escape dismisses the palette; it also closes if its participant leaves.
 Sending keeps it open for repeated interaction, with the existing short cooldown.
 Confirmation never changes menu visibility; failure stays visible in the card.
 Opening or closing a reaction card preserves the chat draft and unread state.
+The interaction window keeps one composer with an on-demand reaction tray.
+Its recipient strip uses the same room identities and the couch's shared palette.
+The tray shortens the scrollable message list rather than covering messages;
+the input and reading position stay in place. Its composer button or a current
+participant's message avatar opens it and focuses the selected person; Escape
+returns to that opener. Avatars of departed participants remain non-interactive.
+Typing or pressing Escape dismisses the tray; sending a reaction keeps it open.
+While it is closed, the newest live reaction briefly shows its sender and recipient
+with the same animation renderer.
+It adds neither a message history entry nor an independent expiry timer. Member
+controls and reactions open on demand within the small companion window. Only
+unobscured chat following the latest messages consumes
+unread messages. The detached window uses the same room session, event expiry and
+sending controls as the couch shortcut.
 Self expressions follow the sender's head, including idle and interaction motion.
 Only that sender's newest self expression replaces their earlier one. A targeted
 emoji is a delivery: it travels from sender to recipient, retains a compact
@@ -148,12 +162,14 @@ use short gestures and sparse accents. All decorative descendants share the
 event's remaining phase and expiry; event ID and sender identity seed their
 variation. No particles, stains or animation timers outlive the event.
 A departed participant is never silently replaced as target.
-Everyone sees the same server-issued event; placement follows their own couch
-layout. Effects have a couch-only coordinate owner, independent of panel layout,
-and never become a video overlay or a media status. Impact transforms leave the
+Everyone sees the same server-issued event; placement follows the people in each
+visible surface. Each roster owns its local coordinates and uses the same renderer.
+Effects never become a video overlay or a media status. Impact transforms leave the
 UUID-owned idle animation, names and status indicators alone. Hiding effects or
 retiring the event cancels its own animation; showing a still-live event uses its
-remaining lifetime. Users can hide effects; reduced motion uses a static stamp.
+remaining lifetime. Animation scheduling and visibility follow the document
+displaying the surface, so a hidden main page does not freeze its detached window.
+Users can hide effects; reduced motion uses a static stamp.
 Theater mode hides the couch and retains a chat entry, using the same floating
 panel and draft without changing the picture's size. HTML player fullscreen
 keeps the existing danmaku control; it does not include the conversation panel.
@@ -236,11 +252,11 @@ Bidirectional room voice is not part of the product plan.
 Text, reactions and danmaku introduce no microphone capture, voice
 admission or additional media peers.
 
-## Detached Chat Window
+## Detached Interaction Window
 
 [Document Picture-in-Picture](https://developer.chrome.com/docs/web-platform/document-picture-in-picture)
-places the current chat panel in an always-on-top window without installing a
-PWA or implementing an App window. The candidate adopts one stable React portal:
+places the current interaction panel in an always-on-top window without installing a
+PWA or implementing an App window. Piik uses one stable React portal:
 the same session, DOM, draft, reading position and controls remain in use.
 Visibility, focus, tooltip placement and dismissal follow the displaying document.
 Theme and language follow the opener. The browser owns window movement and sizing;
@@ -249,7 +265,7 @@ including a window request that completes after retirement.
 
 The [specification](https://wicg.github.io/document-picture-in-picture/) requires
 a secure context and user activation; closing or navigating the opener closes
-the PiP window. It is useful for reading chat beside a windowed or borderless game;
+the PiP window. It supports chat and reactions beside a windowed or borderless game;
 placement above exclusive fullscreen is not guaranteed. Transparent desktop
 backgrounds and mouse passthrough remain an
 [upstream request](https://github.com/WICG/document-picture-in-picture/issues/99),
@@ -259,10 +275,27 @@ is incomplete, so unsupported pages retain the in-page panel. Video PiP and chat
 PiP may replace each other under the browser's single-window policy; no media
 or room owner changes. This needs no new room protocol or major version.
 
-## Remote Control Assessment (Not Implemented)
+## Multiple Sharers Assessment (Not Implemented)
 
-Reviewed 2026-10-15. Cross-platform control is a candidate, not an accepted
-product expansion. A Browser on a computer or phone could control a desktop App;
+The requested party mode lets several participants share their own screens while
+each Viewer chooses one picture to watch. Publishing and watching would be
+independent, with room administration separate from publication ownership.
+The existing one-Host workflow would remain the default.
+
+This is a model change: the current route controller owns one Host and one
+publication. Each new publication would need its own source generation and
+subscription lifecycle, while endpoint upload limits remain shared across all
+publications. Creating a controller per source must not multiply that endpoint's
+outbound allowance. Switching pictures should replace the selected subscription,
+preserving room membership and chat. One selected picture is the initial scope;
+camera conferencing and room voice are separate features. No implementation or
+protocol change is accepted by this assessment.
+
+## Attended Remote-Control Prototype
+
+Reviewed 2026-10-19. Remote control is included in the accepted release scope.
+Desktop and mobile Browsers are controllers; Windows App
+input has local physical evidence, while macOS/Linux backends remain under platform acceptance;
 controlling Android/iOS themselves is a separate platform problem. The
 [Captured Surface Control draft](https://w3c.github.io/mediacapture-surface-control/)
 only provides limited wheel/zoom operations, not general OS keyboard/mouse input.
@@ -274,29 +307,335 @@ needs a separate grant, and Linux needs desktop-specific integration such as the
 [RemoteDesktop Portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html).
 Mobile controllers also need touch and text-input behavior, not just mouse-event reuse.
 
-The inspected [uu-remote-linux implementation](https://github.com/VallierDev/uu-remote-linux/tree/b44a639d9f94a249e511b210ac9c7f9b457fda38)
-implements the Linux controlled endpoint; its controllers, account and signaling
-service remain in the official UU ecosystem. It is not an independent
-cross-platform remote-control SDK. Its GPL implementation remains study-only
-under the repository's contribution rules. No matched measurement establishes
-a Go/Rust performance advantage or a need to replace Piik's media pipeline.
+The native input backend is included by the existing platform build constraints;
+App checks and packaging use the same implementation without an experimental
+feature tag. App discovery advertises the optional input capability;
+a supporting page opts in when starting its native share. An older page emits
+no opt-in, so it receives neither new input events nor input channels. The
+prototype shares a display or window with one desktop or mobile Browser controller.
+Ordered WebRTC data channels carry small input messages back along the existing
+committed media route: direct, Browser relay, App relay or embedded SFU. The
+same Go forwarding module serves App playback/relay and SFU; the Browser adapter
+follows its active media input and child edges. No new listener, PeerConnection,
+route planner or dependency is introduced. The control button appears only
+after the Host enables remote control and the complete input path reports readiness. Updated forwarding peers are
+required along that path; an older peer can still carry the picture.
+Independent virtual gamepads are deferred by the owner; this phase adds no
+input driver.
 
-A bounded candidate would be attended desktop assistance: one explicitly
-approved controller, with a local revoke action and no unattended access.
-App input authority would have to be process-wide because its two native
-sessions share the same OS keyboard and pointer. Site capture approval cannot
-silently grant a Viewer input rights. Source/session retirement and disconnect
-would end the grant, discard queued input and release pressed keys; reconnect
-would require fresh approval. Whole-window capture is not input isolation.
+The logical owners are App coordination/authority, native capture/encoding, and
+native input. These are module boundaries, not three required executables.
+`internal/app/remoteinput` owns permission, grants and release; its platform
+adapter only resolves the target and executes input. Windows uses `SendInput`;
+macOS uses public Quartz events and requests Accessibility permission only when
+the Host enables control. macOS window input also verifies the process incarnation
+and actual focused AX window, rather than treating stacking order as focus.
 
-Transport remains undecided. Existing authenticated signaling could carry
-bounded, directed assistance input independently of the media tree, but adds
-server latency and exposes input to that service. A WebRTC data channel could
-reduce that dependency only with a reachable control path: Viewers may receive
-media from another Viewer or the SFU instead of the Host. Piik has no application
-data channel today. Neither choice is equivalent to reusing chat's 800 ms
-limiter. Scope, input privacy, retirement, latency and real platform acceptance
-must justify the added owner before implementation; current sharing is unchanged.
+Linux uses the existing capture helper's RemoteDesktop Portal session for both
+the selected monitor and input permission. Ordinary sharing still requests only
+ScreenCast. Enabling control opens the system's combined screen/input selector;
+cancelling leaves the previous share intact. Support requires keyboard/pointer
+capabilities and libportal's restore-capable API; missing support leaves ordinary
+capture available. The inherited capture pipe carries input, with no new listener
+or privileged device access. Replacing that Portal session, including a quality
+change, revokes its input grant and resets policy before binding the replacement.
+This first Linux backend supports a monitor, not window-scoped input.
+Linux compilation, synthetic Portal input/release checks and shared Go lifecycle
+tests pass in an isolated VM. Apple SDK builds and package checks pass on both
+Intel and Apple silicon CI. A real Linux desktop/compositor and physical macOS
+permission/Retina/focus checks remain unverified.
+
+Opted-in room signaling binds an ephemeral key and endpoint ID to each
+authenticated Viewer, then sends that binding only to the owning Host. The
+Host passes the snapshot through its existing authorized native session.
+Viewer and native Host use platform AES-GCM to protect input and grant replies;
+intermediate Viewers and the SFU forward ciphertext, not keyboard events or
+authority. The Site remains trusted because it distributes those keys.
+Keys are scoped to the authenticated connection, excluded from diagnostics and
+never persisted. Direction, sequence and input-channel incarnation bind packets
+to their current owner; a delayed closure from a replaced branch cannot revoke
+a newly approved channel. The Browser requires Web Crypto in a secure context
+(HTTPS or localhost); ordinary HTTP viewing remains available without remote input.
+This uses [WebRTC data channels](https://www.rfc-editor.org/rfc/rfc8831.html)
+and the platform [AES-GCM API](https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams).
+
+`internal/app/remoteinput` owns one process-wide grant because the App's native
+sessions share the same physical keyboard and pointer. Remote control starts
+off. The Browser remembers the last successfully applied authorization mode;
+the Host must still enable it manually for each new shared source. Ask each time
+is the default. A remembered password mode asks for a new password before
+applying; the password itself is never remembered. Automatic modes accept only
+authenticated room Viewers and never displace an active controller. Permission
+belongs to the current shared source; changing sources or stopping turns it off.
+Turning it off also clears pending requests and releases held input, including
+while sharing is paused or another capture operation is pending. One input-owner
+intent covers dispatch, OS permission and capture preparation. Off, pause and
+source retirement invalidate it before a late result can enable control. A
+capture already accepted for installation remains owned by the share; cancelling
+input permission cannot kill that picture. The password verifier is kept only in App memory, with one
+attempt per second shared across that source's endpoints. The verifier is never saved in
+configuration, diagnostic reports or links. Host approval, decline and end-control
+actions stay on the same sharing page. The existing authorized native-control connection carries these commands;
+only the session that owns the share can decide its requests. Request identity
+comes from the authenticated room binding, never a relay-supplied participant
+name. The grant is bound to that input channel and source, with a fresh nonce for each approval.
+Each request has its own identity: a late Host decision cannot approve a newer
+request, and a late approval cannot revive the Viewer's cancelled intent.
+Source unavailability ends every pending intent, including one not yet received
+by the Host; it is not a response scoped to an older request.
+Site capture approval never grants input rights. Input may operate the whole
+computer; a shared picture is not an OS input sandbox.
+
+Revocation, pause, source replacement/retirement and connection loss release
+held keys and buttons. The channel belongs to the sharing session; permission
+and pointer coordinates belong to its current source. The Host can change
+windows/displays through the existing source picker without starting another
+share, with fresh permission for the replacement. Audio-only changes retain the
+current grant. Brief ICE loss and media-route replacement revoke permission;
+the recovered path carries a fresh request. App playback and relay descendants
+follow the same rule; interruption releases the upstream grant.
+A closed control channel needs a new media
+connection; neither path silently restores a grant. Either side can end control
+from its page. Windows also supplies a local Ctrl+Alt+F10 stop shortcut; macOS
+uses Control+Option+F10. Linux retains the desktop's sharing controls instead
+of registering a second global key grab. A Host stop (including that local shortcut) also resets automatic
+permission to Ask each time. A Viewer ending their own control leaves the Host's
+policy in place. This adds no service, automatic sharing or control across App
+restart. Escape releases game mouse capture without ending the grant.
+Window blur releases held input. Control ends when no input surface is visible,
+or when video is locally paused or enters native PiP/fullscreen. New requests
+require the picture to be playing in the page; returning never restores a grant.
+DOM fullscreen keeps the page's input surface and retains control. Pointer motion retains the
+latest absolute sample or accumulated relative movement within a short timer,
+flushing before button/key transitions so a drag ends at its final position.
+Input batching does not wait for rendering. Motion batching stays independent
+and bounded.
+Normal pointer-capture release after mouse-up preserves held keyboard keys;
+actual cancellation, blur and grant retirement release them.
+Host settings reuse the shared floating panel beside their entry. An unapplied
+enable request shows a cancel action without displaying permission as granted;
+older completions cannot replace newer form feedback. Viewer request, failure and
+focus feedback stays beside the remote-control action, separate from media health.
+Desktop control uses the normal pointer, game mouse capture hides it, and touch
+control retains its visible arrow.
+Control actions use the existing playback bar. While controlling, a drawer handle
+on the television frame reveals the bar, keeping picture pixels available for
+input. Remote key input does not count as keyboard navigation of playback controls.
+Host management and the Viewer's virtual keyboard can use the browser's
+always-on-top document window, reusing the same portal and state as chat.
+Closing that window returns its content to the page. Keyboard migration, blur
+and retirement release held input; its visible detached document keeps the
+existing grant while the main tab is hidden. Physical key capture and game
+mouse lock stay with the picture, while the detached keyboard sends virtual
+keys and committed text through the same input session. Grant retirement
+closes the keyboard window. Browsers without this API retain the in-page UI.
+A stalled send queue closes the input channel
+without replacing the media connection. No input history is persisted.
+
+Local acceptance exercised real Windows display capture, Browser and App-assisted viewing,
+native mouse click, keyboard text, wheel, held-key release and the local stop
+shortcut. The consent owner was also checked over real SCTP channels for
+unapproved/stale input, controller replacement, pause, disconnect and source
+retirement. Display → window → display switching retained the channel and
+required fresh approval; the App-assisted path delivered actual mouse/keyboard
+input and released a held key on revocation. Request snapshots and decisions
+are scoped to the owning native share; another session cannot inspect, approve
+or decline them. Real Browser-relay, App-relay and SFU chains also delivered
+video and native key input, released held input on Host revocation, and retired
+control on share stop. Both relay chains recovered viewing and accepted a fresh
+request after their intermediate participant left. These checks do not
+establish remote-network latency, game compatibility, mixed-DPI behavior or
+antivirus classification. The experiment build and disposable UI/input probes
+remain under ignored `build/remote-control-prototype/`.
+
+Touch input uses a relative touchpad over the contained picture: one finger
+moves the cursor, a tap clicks, holding starts a drag, and two fingers scroll
+or tap for a right-click. Pinching magnifies the local picture up to 4×; while
+magnified, a two-finger drag pans the view instead of scrolling the remote page.
+A 1× button restores the whole picture. One gesture owner distinguishes pinch
+from scrolling after both contacts update, and retains that choice until release.
+The input geometry uses the transformed picture; local panning keeps its touch
+cursor visible without sending input. Zoom is cleared with the grant and does
+not change capture resolution or the media route. Pointer events select this
+behavior without OS or browser-name checks. The gesture owner is scoped to the current grant;
+cancellation, blur and grant retirement release held input. Temporary loss of
+Host window focus retains the grant's touchpad position while suspending input.
+The keyboard panel reserves space below the picture, or beside it in a short
+landscape fullscreen/theater view. Letters, numbers/symbols and function/navigation
+keys use separate compact sections; text input retains the local IME. Opening
+the key panel does not summon the phone's software keyboard. Keys follow physical
+press/release by default. Optional combination mode lets a tap select each
+modifier; completing the next ordinary key releases the selected modifiers.
+Tapping a selected modifier again cancels it; turning the mode off releases all keys.
+Held contacts repeat and release independently, including
+on cancellation, panel closure and window blur. No pressed state survives grant
+retirement. Common text shortcuts remain beside the text field.
+Its buttons follow the controlled App's platform, including Windows Win+Space
+and macOS Command shortcuts, without depending
+on the local OS delivering that combination to the page. Physical system-key
+capture remains subject to the local OS and Browser; even the
+[Keyboard Lock API](https://developer.chrome.com/docs/capabilities/web-apis/keyboard-lock)
+only receives keys the OS permits. Piik does not install a global keyboard hook
+or simulate the protected Ctrl+Alt+Delete sequence. Closing the keyboard returns
+focus to the control surface.
+The multiline text field owns IME composition and preserves a pasted draft;
+Enter edits that draft and the explicit button submits it. One submission is
+bounded to 2 KiB of UTF-8 so it fits the existing input queue without a bulk
+transfer channel; an oversized draft stays editable rather than being truncated.
+The shared input owner releases held keys and maps line endings/tabs to their
+physical keys before passing ordinary text through the platform adapter, including Windows
+[Unicode input](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-keybdinput),
+Quartz Unicode events and Portal keysyms.
+There is no clipboard synchronization. This follows the touchpad conventions in
+[Moonlight's input guide](https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide#keyboardmousegamepad-input-options).
+No game-specific touch layout is added.
+Chromium touch emulation delivered native clicks, scrolling, drag/cancel,
+Chinese/emoji text and shortcuts over the existing P2P route. Narrow layouts,
+DOM fullscreen, zoom/pan coordinate alignment and Host revocation passed;
+physical Android/iOS soft keyboards and Safari's native fullscreen remain device
+checks, not established by emulation.
+
+Remote control can target an additive 2.x release under the
+[compatibility contract](../standards/versioning.md#extending-interfaces): advertise
+an optional capability, and exchange new commands/events only between supported,
+opted-in sessions. Existing sharing and old command/event shapes remain intact.
+Site capability and App discovery readers already tolerate unknown descriptions;
+this is an extension point, not proof of end-to-end compatibility. Local crossed
+builds of the published 2.1.0 page/App and this prototype completed native window
+sharing and Viewer decoding in both directions, without input opt-in, new input
+events or a remote-control button when either side lacked support. This covers
+those two combinations, not every published Site/App version. Multiple publishers
+are not a prerequisite, and neither feature size nor an internal refactor alone
+requires a major release.
+
+### Distribution Risk
+
+[Microsoft's software criteria](https://learn.microsoft.com/en-us/defender-xdr/criteria)
+distinguish malicious behavior, unwanted software and user choice/control.
+Attended remote control is a legitimate feature, but input injection and its
+potential misuse can invite additional security review or enterprise blocking.
+No source establishes a numerical false-positive increase for Piik.
+[SmartScreen reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
+and [Chrome download warnings](https://support.google.com/chrome/answer/6261569?hl=en)
+are also distinct from a confirmed malware detection; signing does not guarantee
+that a new binary avoids a warning. This prototype adds no unattended access,
+startup persistence, elevation, driver, keyboard hook or security-product bypass.
+Do not recommend antivirus exclusions as its deployment model.
+
+### Remote Co-play
+
+[Steam Remote Play Together](https://partner.steamgames.com/doc/features/remoteplay)
+lets remote participants act as local players in the Host's game. For Piik, this
+retains one shared picture. Games that support a shared keyboard can use separate
+key bindings for the Host and remote player without an input driver. Independent
+gamepads instead need per-player virtual controller slots. The first phase has
+one approved remote keyboard/mouse controller; multiple concurrent controllers
+would need per-controller held-key ownership so one player's key-up does not
+release another's key. The mouse remains one shared pointer.
+
+Game player count is separate from input-device support. Team17 documents
+[four local players but two sharing one keyboard in Overcooked! 2](https://www.team17.com/news/overcooked-2-faq).
+[Pummel Party's developer](https://steamcommunity.com/app/880940/discussions/0/1742226629869609303/)
+describes assigning a physical controller separately from keyboard/mouse; its
+local-player count does not establish split-keyboard support. A Host using a
+physical controller and one remote keyboard player can therefore be another
+driver-free use case when the game supports that combination. Piik's first
+phase limits remote input to one approved Viewer, not the game's local players.
+Keep the UI named remote control; co-play is a use case of the same input grant.
+
+Simulating keys is different from creating independent devices. Windows
+`SendInput` writes to the existing input stream; it does not create a second
+keyboard or pointer. Microsoft's [Virtual HID Framework](https://learn.microsoft.com/en-us/windows-hardware/drivers/hid/virtual-hid-framework--vhf-)
+still requires a HID source driver. Device identity also needs support in the
+game. Windows also exposes [gamepad injection](https://learn.microsoft.com/en-us/uwp/api/windows.ui.input.preview.injection.inputinjector.injectgamepadinput),
+but it requires the restricted `inputInjectionBrokered` package capability;
+that API alone does not establish a portable-App backend or independent slots
+accepted by desktop games. Linux can create devices through its existing
+[uinput module](https://docs.kernel.org/input/uinput.html), subject to device
+permissions. Dependencies therefore follow the platform and supported games.
+Per-player virtual keyboards, mice and gamepads remain deferred; keep
+that future integration at the platform input boundary without prebuilding a
+device registry, driver installer or alternate transport.
+
+[Moonlight's input implementation](https://github.com/moonlight-stream/moonlight-common-c/blob/aeba988e0a302145eff2e70fa3e11cd98ec01f5d/src/InputStream.c)
+accumulates relative movement and sends the latest absolute pointer position;
+input event semantics determine batching and delivery, rather than treating
+every sample as chat. [Sunshine's input owner](https://github.com/LizardByte/Sunshine/blob/5b2a4cfdfa643b5307906c68eb122e5a34855263/src/input.cpp)
+tracks pressed keys/buttons and resets input state. These are useful reference
+patterns for bounded queues and grant retirement. Their GameStream transport
+is not a Browser WebRTC input component; both implementations remain study-only
+under the project's license policy.
+
+Virtual gamepads are a separate platform cost. [Sunshine's input configuration](https://docs.lizardbyte.dev/projects/sunshine/master/md_docs_2configuration.html#gamepad_driver)
+documents Windows/macOS driver or broker dependencies; its Windows ViGEmBus
+fallback is end-of-life. Independent gamepads were deferred by the owner on
+2026-10-17; there is no driver integration in this phase. A future gamepad
+prototype needs an accepted backend and supported-game checks. This does not
+require multiple screen publishers or a replacement media transport.
+
+### Window Capture And Game Input
+
+Reviewed 2026-10-17. The prototype now passes the existing native capture target
+to the input owner for both windows and displays. Capture selection, input
+capability and Host permission remain distinct facts; this adds no media path
+or input driver. Virtual gamepad eligibility must follow its input backend and
+grant, rather than desktop pointer coordinates.
+
+For window keyboard/mouse control, the captured region must map to the current
+native window geometry, including movement, resizing and DPI. The input owner
+reads the current geometry and process identity. It suspends input and releases
+held state when the target loses focus, and revokes control if the source
+disappears. Both pages display that same suspension; the Host is asked to focus
+the shared window to resume. This reduces
+accidental input after switching away; it is not an OS window sandbox.
+`SendInput` has no target-window parameter, and shortcuts can change focus.
+Window selection must never imply that remote input is confined to that window.
+
+The Windows sink uses physical-key mapping through
+[scan codes](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-keybdinput),
+and supports relative mouse movement through browser
+[Pointer Lock](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_Lock_API),
+with an exit interaction that leaves Escape available to games in ordinary
+pointer mode. Mouse button transitions use `mousedown/up`: unlike
+[`pointerdown/up`](https://developer.mozilla.org/en-US/docs/Web/API/Element/pointerdown_event),
+they retain chords such as holding right while clicking left. Pointer capture
+keeps drags attached to the picture; release is observed across the Viewer
+window so leaving the picture cannot leave a button pressed. Scroll handling
+retains magnitude and fractions across Browser wheel units; the default
+conversion follows [Chromium's wheel mapping](https://github.com/chromium/chromium/blob/main/ui/events/blink/web_input_event_builders_win.cc)
+and [Windows wheel/button semantics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput).
+The Browser input session owns request/grant lifetime separately
+from the React controls and DOM capture. Real SCTP checks cover permission,
+focus suspension, updated geometry and retirement; Browser checks cover window
+capture, consent and pointer lock. Local window move/resize checks matched the
+input owner's live bounds to the decoded WGC aspect ratio, including even-pixel
+encoder rounding. A visible isolated Windows target received native clicks
+before and after movement/resizing, physical-key and relative-mouse input;
+focus suspension/resume and Host revocation also passed. These checks do not
+establish commercial-game compatibility or mixed-DPI behavior.
+
+A local Pion/SCTP probe with 40 ms RTT delivered ordered input in about 20 ms
+without loss and about 94 ms at the 95th percentile when every twentieth
+outgoing data packet was dropped. A lost final event, without subsequent input,
+instead waited about 683 ms for retransmission. This synthetic transport probe
+does not establish Browser or game latency. Reliable delivery prevents lost
+key-up events from permanently holding a key, but does not promise immediate
+release during loss. Keep the first prototype on the existing ordered channel;
+desktop acceptance must not be presented as competitive-game readiness. These
+are input semantics and acceptance work, not reasons to replace the media pipeline.
+
+The reviewed implementation uses WGC capture and the documented Windows input
+API, without game-memory access, injected game code or an input driver.
+[SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
+remains subject to process-integrity restrictions, and a successful call only
+proves insertion into the system input stream, not acceptance by a game.
+[Windows marks injected keyboard events](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct).
+[BattlEye distinguishes blocking/kicks from bans](https://www.battleye.com/support/faq/);
+its policy does not certify Piik or another game's anti-cheat. No current evidence
+establishes Piik game compatibility or a ban probability. Virtual controller
+drivers are likewise not an anti-cheat exemption. Keep integration on supported
+platform APIs and maintained input backends; do not add process injection,
+protection bypasses or forced background input to make a rejected game work.
 
 ## Primary References And Rationale
 

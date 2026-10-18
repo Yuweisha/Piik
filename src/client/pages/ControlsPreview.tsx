@@ -1,31 +1,35 @@
 import { useEffect, useRef, useState } from "react";
+import type { VideoFit } from "../media/video-geometry";
 import { Btn, Chip, NameTag, Pill, SwitchItem } from "../components/living/primitives";
 import { RoomChip, RoomCodePlaceholder, RoomAdmissionBadge } from "../components/living/RoomChip";
 import { CaptureSourcePicker, type NativeSourceList } from "../components/living/CaptureSourcePicker";
 import { LedStrip } from "../components/living/Header";
-import { StageTv } from "../components/living/Stage";
+import { StageOverlay, StageTv } from "../components/living/Stage";
 import { HostMicrophone, HostMicrophoneSettings } from "../components/living/HostMicrophone";
 import { LiveAudioExclusion } from "../components/living/AudioExclusionSelect";
 import type { NativeCaptureTarget } from "../native/wire";
 import { RoomInteractions } from "../components/living/RoomInteractions";
-import { RoomChatOverlay, RoomChatToggle } from "../components/living/RoomChatOverlay";
+import { RoomChatOverlay, RoomChatOverlaySettings, RoomChatToggle } from "../components/living/RoomChatOverlay";
 import { RoomInteractionSession } from "../lib/room-interactions";
 import { createOpaqueId } from "../lib/opaque-id";
 import type { InteractionPayload } from "../../shared/protocol";
 import { REACTION_IDS, type ReactionId } from "../../shared/room-interactions";
 import { PlaybackControls } from "../components/living/PlaybackControls";
 import { SharingSettings } from "../components/living/SharingSettings";
+import { HostShareControls } from "../components/living/HostShareControls";
+import { HostRemoteControl } from "../components/living/HostRemoteControl";
+import type { RemoteControlMode } from "../remote-control/protocol";
 import { LauncherForm, type AppMode } from "../components/living/LauncherForm";
 import { AppReleaseNotice } from "../components/living/AppReleaseNotice";
 import { useTheaterMode } from "../components/living/use-theater-mode";
 
-import { AudioBitrateControl, PicturePreferenceControl, QualityPresets, ResolutionControl, VideoRateControls } from "../components/living/QualityPresets";
+import { AudioBitrateControl, PicturePreferenceControl, PictureSettingsSummary, QualityPresets, ResolutionControl, VideoRateControls } from "../components/living/QualityPresets";
 import { RoomCodeInput } from "../components/living/RoomCodeInput";
 import { MAX_SCREEN_AUDIO_BITRATE, VIDEO_CAPTURE_LIMITS, QUALITY_PROFILES, captureFramerateCeiling, matchingQualityProfileId, type QualityProfile } from "../media/quality";
 import type { loadCameraPreviews } from "../media/camera-previews";
 import { Tooltip } from "../components/living/Tooltip";
 import { StatusIndicator } from "../components/living/StatusIndicator";
-import { deriveParticipantStatus } from "../ui/media-status";
+import { deriveParticipantStatus, STATUS_CATALOG } from "../ui/media-status";
 import { Glyph } from "../ui/icons";
 import { useCopy } from "../ui/copy";
 import { PeoplePreview } from "./PeoplePreview";
@@ -57,10 +61,11 @@ export function ControlsPreview() {
   const [voiceProcessing, setVoiceProcessing] = useState(true);
   const [microphoneDevice, setMicrophoneDevice] = useState("");
   const [sharingSettings, setSharingSettings] = useState(false);
+  const [remoteMode, setRemoteMode] = useState<RemoteControlMode>("off");
   const [quality, setQuality] = useState<QualityProfile>(QUALITY_PROFILES["1080p30"]);
   const [launchMode, setLaunchMode] = useState<AppMode>("link");
-  const [majorUpdate, setMajorUpdate] = useState(true);
-  const releaseVersion = majorUpdate ? "v2.0.0" : "v1.1.0";
+  const [majorUpdate, setMajorUpdate] = useState(false);
+  const releaseVersion = majorUpdate ? "v3.0.0" : "v2.2.0";
   const releaseURL = `https://github.com/TNTcraftHIM/Piik/releases/tag/${releaseVersion}`;
   const [launchSite, setLaunchSite] = useState("https://demo.piik.tv");
   const [openSiteOnStart, setOpenSiteOnStart] = useState(false);
@@ -82,6 +87,8 @@ export function ControlsPreview() {
   const [feedback, setFeedback] = useState("");
   const [dial, setDial] = useState("60");
   const [theater, setTheater] = useState(false);
+  const [pictureFit, setPictureFit] = useState<VideoFit>("contain");
+  const [viewerRoute, setViewerRoute] = useState<"auto" | "p2p" | "sfu">("auto");
   const video = useRef<HTMLVideoElement>(null);
   const notify = () => setFeedback(en ? "Got it. This is a preview." : "收到，只在预览里演示。" );
   return <>
@@ -105,21 +112,28 @@ export function ControlsPreview() {
           <Btn icon="network" title="host.topology" hint="hint-topology" onClick={notify} />
           <Btn icon="sliders" title="host.advanced" hint="hint-advanced" onClick={notify} />
         </div>
-        <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
+      </section>
+      <section id="sharing-preview" className="cp-card cp-sharing-preview">
+        <header><h2>{t("host.advanced")}</h2></header>
+        <HostShareControls actions={<>
           <HostMicrophone enabled={microphone} paused={paused} volume={microphoneVolume}
             onToggle={() => setMicrophone(value => !value)} />
-          <Btn icon={paused ? "play" : "pause"} title={paused ? "host.resume" : "host.pause"} cap={paused ? "host.resume" : "host.pause"}
-            hint={paused ? "hint-resume" : "hint-pause"} onClick={() => setPaused(!paused)} />
           <Btn icon="switchSource" title="host.switchSource" cap="host.switchSource" hint="hint-switch-source" onClick={notify} />
-          <Btn icon="sliders" cap="host.settings.button" title={sharingSettings ? "host.advanced.hide" : "host.advanced"}
+          </>}
+          settings={<Btn icon="sliders" cap="host.settings.button" title={sharingSettings ? "host.advanced.hide" : "host.advanced"}
 
             hint={sharingSettings ? "hint-collapse" : "hint-advanced"} tone={sharingSettings ? "on" : undefined}
-            expanded={sharingSettings} controls="preview-sharing-settings" onClick={() => setSharingSettings(value => !value)} />
-          <Btn id="host-stop-share" icon="stop" tone="danger" title="host.stop" cap="host.stop" hint="hint-share-stop" onClick={notify} />
-        </div>
+            expanded={sharingSettings} controls="preview-sharing-settings" onClick={() => setSharingSettings(value => !value)} />}
+          remote={<HostRemoteControl mode={remoteMode} platform="windows" requests={[]}
+            disabled={paused} onPolicy={async mode => setRemoteMode(mode)} onDecide={async () => undefined} />}
+          pause={<Btn icon={paused ? "play" : "pause"} title={paused ? "host.resume" : "host.pause"} cap={paused ? "host.resume" : "host.pause"}
+            hint={paused ? "hint-resume" : "hint-pause"} onClick={() => setPaused(!paused)} />}
+          ending={<Btn id="host-stop-share" icon="stop" tone="danger" title="host.stop" cap="host.stop" hint="hint-share-stop" onClick={notify} />}
+        />
         <SharingSettings id="preview-sharing-settings" open={sharingSettings}
           presets={<QualityPresets selected={matchingQualityProfileId(quality)}
             onSelect={id => setQuality(current => ({ ...QUALITY_PROFILES[id], maxAudioBitrate: current.maxAudioBitrate }))} />}
+          pictureSummary={<PictureSettingsSummary value={quality} />}
           picture={<><ResolutionControl value={quality.resolution} limits={VIDEO_CAPTURE_LIMITS} disabled={false}
             onChange={resolution => setQuality(current => ({ ...current, resolution,
               maxFramerate: Math.min(current.maxFramerate, captureFramerateCeiling(resolution)),
@@ -127,9 +141,18 @@ export function ControlsPreview() {
             <VideoRateControls value={quality} limits={VIDEO_CAPTURE_LIMITS} disabled={false}
               onChange={change => setQuality(current => ({ ...current, ...change }))} />
             <PicturePreferenceControl value={quality.degradationPreference} disabled={false}
-              onChange={degradationPreference => setQuality(current => ({ ...current, degradationPreference }))} /></>}
-          audio={<><AudioBitrateControl value={quality.maxAudioBitrate ?? QUALITY_PROFILES["1080p30"].maxAudioBitrate} max={MAX_SCREEN_AUDIO_BITRATE}
-              disabled={false} onChange={maxAudioBitrate => setQuality(current => ({ ...current, maxAudioBitrate }))} />
+              onChange={degradationPreference => setQuality(current => ({ ...current, degradationPreference }))} />
+            <div className="lr-door-group">
+              <span className="lr-door-glyph"><Glyph name="puzzle" size={19} /><span>{vis ? null : t("host.advanced.codec")}</span></span>
+              <div className="lr-row-group" role="group" aria-label={t("host.advanced.codec")}>
+                {(["vp8", "auto", "h264"] as const).map(mode => <Chip key={mode} selected={mode === "auto"} disabled
+                  title={mode === "auto" ? t("host.advanced.codec.auto") : mode.toUpperCase()} hint="hint-codec">
+                  {mode === "auto" && !vis ? t("host.advanced.codec.auto") : mode.toUpperCase()}
+                </Chip>)}
+              </div>
+            </div>
+          </>}
+          audio={<>
           <div className="lr-door-group lr-source-audio-settings">
             <SwitchItem checked={sound} onChange={setSound} label={t("host.sourcePicker.systemAudio")}
               hint={sound ? "hint-stop-audio" : "hint-share-audio"} />
@@ -137,7 +160,17 @@ export function ControlsPreview() {
           </div><HostMicrophoneSettings deviceId={microphoneDevice} onDevice={setMicrophoneDevice} loadDevices={previewMicrophones}
             native enabled={microphone} disabled={paused} volume={microphoneVolume} onVolume={setMicrophoneVolume}
             voiceProcessing={voiceProcessing} onVoiceProcessing={setVoiceProcessing} />
+          <AudioBitrateControl value={quality.maxAudioBitrate ?? QUALITY_PROFILES["1080p30"].maxAudioBitrate} max={MAX_SCREEN_AUDIO_BITRATE}
+            disabled={false} onChange={maxAudioBitrate => setQuality(current => ({ ...current, maxAudioBitrate }))} />
           </>}
+          connection={
+            <div className="lr-row-group" role="group" aria-label={t("host.advanced.route")}>
+              <SwitchItem checked disabled onChange={notify} label={t("host.advanced.route.topo")}
+                note={t("host.advanced.route.topoHint")} hint="hint-topology" />
+              <SwitchItem checked={false} disabled onChange={notify} label={t("host.advanced.route.peerOnly")}
+                note={t("host.advanced.route.peerOnlyHint")} hint="hint-route-p2p" />
+            </div>
+          }
         />
       </section>
       <section id="option-preview" className="cp-card">
@@ -150,7 +183,7 @@ export function ControlsPreview() {
             note={t("host.advanced.route.sfuOnlyHint")} hint="hint-route-sfu" />
         </div>
         <div className="cp-tools">
-          <span className="lr-toggle" role="group" aria-label={t("host.policy")} data-selected={policy}>
+          <span className="lr-toggle" role="group" aria-label={t("host.policy")}>
             {(["open", "private"] as const).map(value => <Tooltip key={value} kind={value === "open" ? "hint-admission-code" : "hint-policy-private"}
               text={vis ? undefined : `${t(`host.policy.${value}`)} · ${t(value === "private" && roomPassword ? "host.policy.privatePasswordHint" : `host.policy.${value}Hint`)}`}>
               <button type="button" className={policy === value ? "is-selected" : undefined} aria-pressed={policy === value}
@@ -243,8 +276,12 @@ export function ControlsPreview() {
     <section id="playback-preview" className="cp-section">
       <header className="cp-section-head"><span className="cp-number">07</span><div><h2>{en ? "The playback bar" : "播放时，顺手就能找到。"}</h2>
         <p>{en ? "This bar shows its waiting state. The playback test page includes a moving picture, volume and picture in picture." : "这里展示等待画面时的播放栏；动态画面、音量和小窗可进入完整播放预览试用。"}</p></div></header>
-      <div className="cp-stage"><StageTv label={t("playback.controls")}><video ref={video} poster={POSTER} playsInline inert />
+      <div className="cp-stage"><StageTv label={t("playback.controls")} indicator={<StatusIndicator status={STATUS_CATALOG.joining} />}>
+        <video ref={video} poster={POSTER} playsInline inert style={{ objectFit: pictureFit }} />
+        <StageOverlay dim waiting icon={STATUS_CATALOG.joining.icon} message={t(STATUS_CATALOG.joining.labelKey)} comic={STATUS_CATALOG.joining.comic} />
         <PlaybackControls videoRef={video} stream={null} canPlay={false} theaterMode={theater} onPlay={notify}
+          settings={{ pictureFit, setPictureFit, route: { preference: viewerRoute, onChange: setViewerRoute,
+            sfuAvailable: true, sfuOnly: false, peerOnly: false, disabled: false, rejected: false } }}
           onToggleTheater={() => setTheater(!theater)} onReconnect={notify} reconnectAvailable />
       </StageTv></div>
       <p><a href="/__playback-preview">{en ? "Open the full playback preview" : "进入完整播放预览"} →</a></p>
@@ -275,7 +312,7 @@ export function ControlsPreview() {
     </section>
     <section id="interaction-preview" className="cp-section">
       <header className="cp-section-head"><span className="cp-number">09</span><div><h2>{en ? "A little company" : "聊两句，丢个番茄。"}</h2>
-        <p>{en ? "Click a person for reactions. Move or resize either panel; supported browsers can pop chat out into an always-on-top window." : "点小人发表情；聊天与表情窗都能拖动、缩放。支持的浏览器还可将聊天弹出为置顶小窗。"}</p></div></header>
+        <p>{en ? "Chat and react in one window. Open reactions beside the message input; supported browsers can keep this window on top." : "聊天和表情都在一个窗口里。点输入区的「发表情」选择互动对象；支持的浏览器可以将窗口置顶。"}</p></div></header>
       <InteractionControlsPreview />
     </section>
   </>;
@@ -300,7 +337,7 @@ function InteractionControlsPreview() {
           requestId: message.requestId, occurredAt: Date.now(), sender, payload: message.payload });
       });
       return true;
-    });
+    }, Date.now, REACTION_IDS);
     model.authenticated(sender.peerId);
     setSession(model);
     return () => model.close();
@@ -322,15 +359,15 @@ function InteractionControlsPreview() {
       </select>
     </label>
     <button type="button" className="lr-btn" onClick={() => receiveSample({ kind: "reaction", reaction,
-      targetPeerId: viewer ? "preview-friend" : "preview-host",
+      targetPeerId: crowded ? "preview-friend-1" : viewer ? "preview-friend" : "preview-host",
     })}><Glyph name="smile" size={18} />{lang === "en" ? "Receive a reaction" : "模拟收到表情"}</button>
   </div><div className={theater ? "lr-room is-theater" : "cp-interaction-room"}><div className="lr-scene">
-  <StageTv label={t("interaction.title")}>
+  <StageTv label={t("interaction.title")} indicator={<StatusIndicator status={STATUS_CATALOG.connected} />}>
     <video ref={video} poster={POSTER} playsInline />
     <RoomChatOverlay session={session} visible />
     <PlaybackControls videoRef={video} stream={null} canPlay={false} onPlay={() => {}}
       theaterMode={theater} onToggleTheater={() => setTheater(value => !value)} onReconnect={() => {}} reconnectAvailable={false}
-      extraActions={<RoomChatToggle session={session} />} />
+      overlayAction={<RoomChatToggle session={session} />} overlaySettings={session && <RoomChatOverlaySettings session={session} />} />
   </StageTv><RoomInteractions session={session}
     view={viewer ? "viewer" : "host"} host={{ key: "preview-host", name: "Piik", you: !viewer }} entries={
       Array.from({ length: crowded ? 20 : 1 }, (_, index) => ({

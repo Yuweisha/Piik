@@ -130,6 +130,7 @@ type roomShare struct {
 	routePolicy     *protocol.RoutePolicy
 	// pausedGeneration is the share generation the Host paused, "" if none.
 	pausedGeneration string
+	audioAvailable   *bool
 }
 
 type senderQualityRateWindow struct {
@@ -713,6 +714,7 @@ type authRequest struct {
 	token           string
 	viewerGrant     string
 	viewerPassword  string
+	routePreference *protocol.ViewerRoutePreference
 	shareGeneration string
 	sharingPaused   bool
 	qualitySettings *protocol.QualitySettings
@@ -742,13 +744,14 @@ func authRequestOf(message protocol.ClientMessage) (authRequest, bool) {
 		}, true
 	case protocol.AuthenticateViewerMessage:
 		return authRequest{
-			role:           protocol.RoleViewer,
-			roomID:         m.RoomID,
-			clientID:       m.ClientID,
-			viewerGrant:    m.ViewerGrant,
-			viewerPassword: m.ViewerPassword,
-			viewerPresence: m.ViewerPresence,
-			displayName:    displayNameString(m.DisplayName),
+			role:            protocol.RoleViewer,
+			roomID:          m.RoomID,
+			clientID:        m.ClientID,
+			viewerGrant:     m.ViewerGrant,
+			viewerPassword:  m.ViewerPassword,
+			routePreference: m.RoutePreference,
+			viewerPresence:  m.ViewerPresence,
+			displayName:     displayNameString(m.DisplayName),
 		}, true
 	}
 	return authRequest{}, false
@@ -916,6 +919,7 @@ func (s *Server) completeAuthentication(sess *session, request authRequest, part
 		mediaActive = s.activeHostShareGeneration(roomID) != ""
 	}
 	routeParticipant := routeParticipant(sess, authenticated)
+	routeParticipant.routePreference = request.routePreference
 	if participant.Role == protocol.RoleHost && mediaActive {
 		policy := s.routePolicyOf(roomID)
 		routeParticipant.routePolicy = &policy
@@ -1005,9 +1009,15 @@ func (s *Server) completeAuthentication(sess *session, request authRequest, part
 			Role:                          protocol.RoleViewer,
 		})
 	}
+	if participant.Role == protocol.RoleViewer && request.routePreference != nil {
+		s.router.sendViewerRoutePreference(roomID, participant.PeerID, true)
+	}
 	if participant.ReplacedSessionID != "" {
 		if replaced := s.sessionsByID[participant.ReplacedSessionID]; replaced != nil && replaced != sess {
 			replaced.close(websocket.StatusCode(protocol.SignalCloseSessionReplaced), "Session replaced")
+		}
+		if participant.Role == protocol.RoleViewer {
+			s.sendRemoteInputPeers(roomID)
 		}
 	}
 
@@ -1104,6 +1114,9 @@ func (s *Server) settleHostShare(roomID, sessionID string, request authRequest) 
 		share.pausedGeneration = shareGeneration
 	}
 	s.shares[roomID] = share
+	if currentGeneration != shareGeneration {
+		s.broadcastAudioPresence(roomID)
+	}
 	return shareGeneration
 }
 
@@ -1185,6 +1198,8 @@ func routeParticipant(sess *session, authenticated *authenticatedSession) authen
 
 func (s *Server) handleAuthenticatedMessage(sess *session, authenticated *authenticatedSession, message protocol.ClientMessage) {
 	switch m := message.(type) {
+	case protocol.SubscribeRemoteInputMessage:
+		s.subscribeRemoteInput(sess, authenticated, m)
 	case protocol.SubscribeRoomInteractionsMessage:
 		// Explicit opt-in protects older v23 readers from unknown events.
 		sess.roomInteractions = true
@@ -1239,6 +1254,12 @@ func (s *Server) handleAuthenticatedMessage(sess *session, authenticated *authen
 				QualitySettings: m.QualitySettings,
 			})
 		}
+	case protocol.SetViewerRoutePreferenceMessage:
+		if authenticated.role != protocol.RoleViewer {
+			s.sendError(sess, "FORBIDDEN", "Only a viewer may select an incoming route")
+			return
+		}
+		s.router.setViewerRoutePreference(routeParticipant(sess, authenticated), m.Preference)
 	case protocol.RelayCapacityMessage:
 		if authenticated.role != protocol.RoleViewer {
 			s.sendError(sess, "FORBIDDEN", "Only a viewer may advertise relay capacity")
@@ -1288,6 +1309,13 @@ func (s *Server) handleAuthenticatedMessage(sess *session, authenticated *authen
 		name := string(m.DisplayName)
 		authenticated.displayName = &name
 		s.sendViewerPresence(authenticated.roomID)
+	case protocol.SubscribeAudioPresenceMessage:
+		if authenticated.role == protocol.RoleViewer {
+			sess.audioPresence = true
+			s.sendAudioPresence(sess, authenticated.roomID)
+		}
+	case protocol.SetAudioPresenceMessage:
+		s.setAudioPresence(sess, authenticated, m)
 	case protocol.SetSharingPausedMessage:
 		if authenticated.role != protocol.RoleHost {
 			s.sendError(sess, "FORBIDDEN", "只有当前房主可以暂停分享")
@@ -1381,6 +1409,7 @@ func (s *Server) startSharing(sess *session, authenticated *authenticatedSession
 	share := s.shares[authenticated.roomID]
 	share.generation = ""
 	share.pausedGeneration = ""
+	share.audioAvailable = nil
 	s.shares[authenticated.roomID] = share
 	request := authRequest{
 		role:            protocol.RoleHost,

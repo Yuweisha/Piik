@@ -11,6 +11,7 @@ import { useCopy, type CopyKey } from "../ui/copy";
 import { replaySvgAnimations } from "../ui/animation";
 import { MetricCells } from "../components/living/Metrics";
 import { EMPTY_METRICS } from "../types";
+import { usePreviewAnchor } from "./use-preview-anchor";
 
 const EXAMPLES: { label: string; kind: HintKind | ComicKind; tone: ComicTone; motion: ComicMotion; text: CopyKey }[] = [
   { label: "说明 / Neutral", kind: "hint-volume", tone: "off", motion: "demo", text: "playback.volume" },
@@ -56,6 +57,7 @@ function PreviewCard({ kind, tone, motion, label, text }: {
 }
 
 export function TooltipPreviewPage() {
+  usePreviewAnchor();
   const { t, lang } = useCopy();
   const en = lang === "en";
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -71,11 +73,13 @@ export function TooltipPreviewPage() {
         </header>
         <nav className="cp-nav" aria-label={en ? "Preview sections" : "预览目录"}>
           <a href="#button-preview">{en ? "Buttons" : "按钮"}</a><a href="#option-preview">{en ? "Options" : "选择与开关"}</a>
+          <a href="#sharing-preview">{t("host.advanced")}</a>
           <a href="#input-preview">{en ? "Inputs" : "输入与房间号"}</a><a href="#feedback-preview">{en ? "Feedback" : "反馈"}</a>
           <a href="#people-preview">{en ? "People & connections" : "人物、沙发与连接图"}</a><a href="#source-preview">{en ? "Source picker" : "画面选择"}</a>
           <a href="#playback-preview">{en ? "Playback" : "播放栏"}</a><a href="#comic-preview">{en ? "Tooltips & comics" : "提示与漫画"}</a>
           <a href="#launcher-preview">{en ? "App launcher" : "模式选择"}</a>
           <a href="#interaction-preview">{en ? "Chat & reactions" : "聊天与互动"}</a>
+          <a href="#hint-remote-control">{en ? "Remote control" : "远程控制"}</a>
 
           <a href="#hint-admission-code">{en ? "Room entry" : "房间准入"}</a>
           <a href="#metrics-preview">{en ? "Metrics" : "连接数据"}</a>

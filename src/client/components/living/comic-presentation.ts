@@ -66,6 +66,7 @@ const PRESENTATIONS: Partial<Record<ComicKind | HintKind, ComicPresentation>> = 
   "hint-admission-password": { tone: "off", motion: "still" },
   "hint-admission-invite": { tone: "off", motion: "still" },
   "hint-route-p2p-required": LIMITED,
+  "hint-route-sfu-required": LIMITED,
   "hint-volume-basic": LIMITED,
   "hint-no-audio": LIMITED,
   "hint-pip-unavailable": LIMITED,
@@ -86,11 +87,11 @@ const COLOURS: Record<ComicTone, string> = {
   bad: "var(--danger)",
 };
 
-export function comicStyle(tone: ComicTone, motion: ComicMotion): CSSProperties {
+export function comicStyle(tone: ComicTone): CSSProperties {
   return {
     "--comic-tone": COLOURS[tone],
     "--comic-duration": "3.2s",
-    // Explanations inherit the tooltip's loop; standalone results play once.
-    "--comic-repeat": motion === "progress" ? "infinite" : undefined,
+    // Scene poses distinguish progress from a settled result, not repetition.
+    "--comic-repeat": "infinite",
   } as CSSProperties;
 }

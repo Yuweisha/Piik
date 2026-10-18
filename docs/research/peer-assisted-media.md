@@ -11,6 +11,11 @@ not define route selection, wire messages, UI, or current deployment state.
 
 ## Conclusion
 
+These conclusions describe ordinary track forwarding and the alternatives checked
+on 2026-08-22. The later independent producer/carrier composition in
+[ADR-0014](../adr/0014-browser-node-local-encoding-pool.md) owns optional Browser
+encoding reuse; it does not remove relay decoding or per-child transport work.
+
 A normal Browser can receive a remote WebRTC video track and add it to another
 `RTCPeerConnection`. This is the compatibility-first peer relay path and can
 distribute Host upload across participating Viewers.
@@ -158,8 +163,8 @@ configuration checks and media evidence would still be required.
 ## License Boundary
 
 This research uses W3C/IETF specifications, BSD-licensed libwebrtc source,
-public browser-compatibility data, and an official TeamSpeak technical
-statement. No GPL/AGPL implementation code was copied. GPL/AGPL projects remain
+and public browser-compatibility data. No GPL/AGPL implementation code was copied.
+GPL/AGPL projects remain
 study-only unless a separate distribution decision accepts their obligations;
 the repository's own [MIT license](../../LICENSE) does not replace theirs.
 
@@ -177,7 +182,6 @@ the repository's own [MIT license](../../LICENSE) does not replace theirs.
 - [libwebrtc `VideoEncoderFactory`](https://webrtc.googlesource.com/src/+/refs/heads/main/api/video_codecs/video_encoder_factory.h)
 - [libwebrtc `VideoEncoder`](https://webrtc.googlesource.com/src/+/refs/heads/main/api/video_codecs/video_encoder.h)
 - [libwebrtc license](https://webrtc.googlesource.com/src/+/refs/heads/main/LICENSE)
-- [TeamSpeak single-encoding explanation](https://community.teamspeak.com/t/ts6-beta-community-update-insights/58116/208)
 - [Encoded Transform compatibility data](https://raw.githubusercontent.com/mdn/browser-compat-data/main/api/RTCRtpScriptTransform.json)
 - [WebCodecs `VideoDecoder` compatibility data](https://raw.githubusercontent.com/mdn/browser-compat-data/main/api/VideoDecoder.json)
 - [`MediaStreamTrackProcessor` compatibility data](https://raw.githubusercontent.com/mdn/browser-compat-data/main/api/MediaStreamTrackProcessor.json)

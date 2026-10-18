@@ -15,8 +15,9 @@ import {
 import { CaptureSourcePicker } from "../../../src/client/components/living/CaptureSourcePicker";
 import { RoomInteractions } from "../../../src/client/components/living/RoomInteractions";
 import { RoomInteractionSession } from "../../../src/client/lib/room-interactions";
-import { RoomChatToggle } from "../../../src/client/components/living/RoomChatOverlay";
+import { RoomChatOverlaySettings, RoomChatToggle } from "../../../src/client/components/living/RoomChatOverlay";
 import { HostMicrophone } from "../../../src/client/components/living/HostMicrophone";
+import { HostShareControls } from "../../../src/client/components/living/HostShareControls";
 import { PlaybackControlsView } from "../../../src/client/components/living/PlaybackControls";
 import { StatusIndicator } from "../../../src/client/components/living/StatusIndicator";
 import { Lcd, RoomChip, RoomCodePlaceholder, RoomAdmissionBadge } from "../../../src/client/components/living/RoomChip";
@@ -235,7 +236,7 @@ function Screen({ shot }: { shot: Shot }) {
                 picture={{ supported: true, active: false, failed: false, toggle: async () => {} }}
                 togglePlayback={noop} toggleFullscreen={noop} toggleMute={noop} setLevel={noop}
                 onToggleTheater={noop} onReconnect={noop} reconnectAvailable
-                extraActions={<RoomChatToggle session={session} />} />}
+                overlayAction={<RoomChatToggle session={session} />} overlaySettings={<RoomChatOverlaySettings session={session} />} />}
               {shot === "picker" && (
                 <CaptureSourcePicker
                   nativeSources={{
@@ -278,15 +279,14 @@ function Screen({ shot }: { shot: Shot }) {
                 </div>
               )}
             </StageTv>
-            {!viewer && <div className="lr-host-share-controls lr-media-controls" role="group" aria-label={t("host.shareControls")}>
+            {!viewer && <HostShareControls actions={live ? <>
               <HostMicrophone enabled={false} volume={1} onToggle={noop} />
-              {live && <>
-                <Btn icon="pause" cap="host.pause" title="host.pause" hint="hint-pause" draw="host-share-toggle" />
                 <Btn icon="switchSource" cap="host.switchSource" title="host.switchSource" hint="hint-switch-source" />
-              </>}
-              <Btn icon="sliders" cap="host.settings.button" title="host.advanced" hint="hint-advanced" expanded={false} />
-              {live && <Btn icon="stop" tone="danger" cap="host.stop" title="host.stop" hint="hint-share-stop" />}
-            </div>}
+              </> : null}
+              settings={<Btn icon="sliders" cap="host.settings.button" title="host.advanced" hint="hint-advanced" expanded={false} />}
+              pause={live && <Btn icon="pause" cap="host.pause" title="host.pause" hint="hint-pause" draw="host-share-toggle" />}
+              ending={live && <Btn icon="stop" tone="danger" cap="host.stop" title="host.stop" hint="hint-share-stop" />}
+            />}
             <div className="lr-stage-notices" />
             <RoomInteractions
               session={live ? session : null}
@@ -366,7 +366,7 @@ function Screen({ shot }: { shot: Shot }) {
                   </div>
                   <span className="lr-divider" aria-hidden="true" />
                   <RowGroup>
-                    <span className="lr-toggle" role="group" aria-label={t("host.policy")} data-selected="private">
+                    <span className="lr-toggle" role="group" aria-label={t("host.policy")}>
                       <button type="button" aria-pressed={false}><Glyph name="globe" size={19} /><Cap k="host.policy.open" /></button>
                       <button type="button" className="is-selected" aria-pressed><Glyph name="lock" size={19} /><Cap k="host.policy.private" /></button>
                     </span>

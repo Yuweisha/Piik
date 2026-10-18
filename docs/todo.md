@@ -1,6 +1,6 @@
 # Current TODO Ledger
 
-Last reviewed: 2026-10-16
+Last reviewed: 2026-10-19
 
 Explicit owner holds remain in force; an investigation does not itself
 accept a new feature or architecture. A missing device or reporter trace blocks
@@ -9,10 +9,18 @@ Git/PRs own completed history.
 
 ## Now
 
-The 2.0 maintenance line retains the published protocol and route owners.
+The 2.x maintenance line retains the published protocol and route owners.
 Release artifacts and operator records own exact delivery; remaining product
 work is listed below. Broader device coverage does not override the owner's
 platform deferrals or establish a diagnosis for unmatched reports.
+
+- [ ] **macOS bundle startup acceptance (#479).** The package now contains the
+  actual Mach-O entry and helpers inside `.app`, replacing the shell launcher's
+  dependency on an external sibling executable. A moved-bundle assembly check
+  passes, and release CI has built and packaged both Mac architectures.
+  Verify Finder launch on macOS, including a downloaded/quarantined bundle and
+  capture permissions. The packaging defect
+  is established; its correction has not yet been matched to the reporter's Mac.
 
 - [ ] **Return LiveKit to an upstream pin.** Native publication now supplies
   unmet encoder demand to the existing allocator through the scoped dependency
@@ -22,8 +30,61 @@ platform deferrals or establish a diagnosis for unmatched reports.
   own that boundary; this local repair does not diagnose the unmatched field
   reports below.
 
+- [ ] **Early repaired-media startup.** Release postflight reproduced an SFU
+  publication failure before the subscriber offer. A deterministic Pion trial
+  established that repair can queue before primary RID admission, retaining a
+  zero SSRC. The shared RTP reader now restores the admitted primary identity;
+  focused forwarding and Browser SFU lifecycle checks pass. Complete this repository
+  audit and acceptance, publish v2.2.1, and repeat the affected deployment check. The
+  production logs match this failure boundary but do not identify the packet fields.
+
+- [ ] **SFU recovery rollout.** Shared forwarding now gives DownTrack one
+  owner for video sender reports and RR/RTT accounting, with Pion scheduling.
+  Matched SFU logs established clock contamination blocking layer changes and
+  missing RTT updates. RTCP, constrained recovery and the current App/Server
+  lifecycle checks pass locally. After the approved release, verify the affected
+  deployment with both corrected App and Server; an ICE restart does not replace
+  the affected upstream clock. This does not diagnose every unmatched
+  sustained-quality report below.
+
+- [ ] **New promotional film.** Review the local 54-second Chinese/English
+  motion draft, which introduces screen sharing, invitation, interaction and
+  single-controller keyboard/mouse use with explicit Host consent. Confirm the
+  pacing and soundtrack before replacing the existing online film. The current
+  draft uses product components and staged scenes, not a recorded live session.
+
 ## Held By Owner
 
+- [ ] **Theme-role consistency.** Deferred to the next minor update by
+  the owner on 2026-10-19. Keep this release's accepted palette. Sliding
+  segments should reuse the theme's selected-control colour pair rather than
+  inverse text/paper colours; review related App, Web and website choices at
+  their shared owners. Define primary, secondary, selection and status roles
+  once; preserve primary-action and semantic-status identities. Bridge the
+  same-origin website/docs appearance preference through their existing theme
+  adapters rather than keeping independent explicit choices.
+
+- [ ] **Remote-control latency and responsiveness.** Scheduled after this release.
+  Compare input-to-visible-response timing on the same endpoints, source and
+  network against a mature remote-control implementation. Separate input
+  delivery, Host execution, capture/encode and receive/playout; retain the
+  existing route and authorization owners. Identify the dominant delay before
+  changing budgets or buffering, and compare loss/recovery as well as steady latency.
+
+- [ ] **Persistent-loss estimator replacement.** Deferred by the owner on
+  2026-10-18. Retain mature congestion control and accept quality reduction under
+  sustained high loss; no custom loss model or release prerequisite is added.
+  [Evidence and limits](./research/node-local-media-design.md#persistent-loss-with-low-source-utilization)
+  retain the low-utilization collapse and distinguish it from concrete feedback
+  accounting or recovery defects, which remain in scope for ordinary fixes.
+- [ ] **Multiple remote-control screens.** Deferred by the owner on 2026-10-17.
+  Keep one shared source and the existing Host source picker; Viewer-initiated
+  screen switching and simultaneous multi-screen streams are later work.
+- [ ] **Independent virtual input devices for remote co-play.** Deferred by the owner on
+  2026-10-17. This phase uses keyboard/mouse only and adds no virtual gamepad
+  driver. Per-player virtual keyboards, mice and gamepads are later work.
+  The [input assessment](./research/room-interactions.md#remote-co-play) owns
+  platform dependencies and the distinction from shared keyboard/mouse control.
 - [ ] **32-bit Windows/Linux Apps.** Deferred by the owner on 2026-10-02;
   no package or website option is planned. Browser use remains available where
   the OS/browser supports the required media APIs. Retain the isolated
@@ -41,6 +102,13 @@ platform deferrals or establish a diagnosis for unmatched reports.
 These physical checks or reporter diagnoses remain unverified. A local repair or
 successful test is not proof of a reporter's cause; research owns the completed
 experiments and their limits.
+
+- [ ] **Remote-control device acceptance.** Verify physical Android/iOS
+  controllers, mixed-DPI displays, commercial games and an actual remote-device
+  session. macOS needs Finder/Accessibility, focus, Retina and input checks;
+  Linux needs desktop Portal permissions and capture/input checks. Existing
+  [evidence and limits](./verification-status.md#device-evidence-boundary) remain
+  distinct from build and emulated-controller acceptance.
 
 - [ ] **Sustained quality loss.** Retest the affected Native Host and the
   v1.9.2 self-hosted Browser setup with matched Host/Viewer/Server diagnostics,
@@ -92,8 +160,10 @@ experiments and their limits.
   [#448](https://github.com/TNTcraftHIM/Piik/issues/448) and
   [#453](https://github.com/TNTcraftHIM/Piik/issues/453) need paired transport traces;
   the v1.6.3 timeout also needs share-start/SDP evidence.
-  [#471](https://github.com/TNTcraftHIM/Piik/issues/471) needs ICE traces and the
-  discovery URLs after STUN redundancy and override changes.
+  [#471](https://github.com/TNTcraftHIM/Piik/issues/471) reports working STUN and
+  a router mapping on v2.1.0, but no ICE check responses. Obtain the retained
+  paired reports; that summary alone does not distinguish NAT filtering,
+  upstream mapping or a blocked path.
   [#468](https://github.com/TNTcraftHIM/Piik/issues/468) needs the complete join/
   reauthentication trace on repaired connection-opportunity accounting.
   [#464](https://github.com/TNTcraftHIM/Piik/issues/464) needs matched SFU reports
@@ -194,22 +264,12 @@ remains; do not add another retry/transport owner to bypass these limits.
     identifies pairing/revocation and native decoded-input ownership beyond the
     device selector. Reopen for a concrete use case that justifies this boundary
     and physical latency/echo/background checks. This does not reopen room voice.
-10. **Attended remote control.** The [cross-platform assessment](./research/room-interactions.md#remote-control-assessment-not-implemented)
-    distinguishes Browser controllers from desktop App input authority. Decide
-    the use case and platform scope before a prototype; transport, input privacy
-    and App-wide grant retirement need acceptance. No remote-control code,
-    mobile controlled endpoint or language rewrite is currently planned.
-11. **Per-Viewer SFU preference (#477).** Existing `SFU_ONLY=true` is an operator
-    policy for the whole site; it does not provide the requested individual
-    Viewer control. Keep this proposal separate from quality-recovery fixes.
-    Reopen only for an accepted policy that preserves Host privacy, bounded SFU
-    capacity and the existing automatic route owner.
-12. **Multiple simultaneous sharers.** Assess a separate room mode in which
-    participants publish and each Viewer selects a stream. First define room
-    authority, per-publication routes and resource ownership; retain one selected
-    picture per Viewer as the simplest candidate. The current one-Host contract
-    is unchanged. Names and UI follow the model decision; low-level sharing and
-    recovery work takes priority over this proposal.
-13. **Review the user-suggested [piik-watch-party](https://github.com/Harsh-dev3221/piik-watch-party).**
-    After current maintenance, inspect its implementation for useful ideas that
-    fit Piik's existing model and interaction design.
+10. **Remote co-play and mobile controlled platforms.** The [co-play assessment](./research/room-interactions.md#remote-co-play)
+    separates virtual gamepad slots from attended keyboard/mouse assistance.
+    Desktop input acceptance remains above; independent gamepads and mobile
+    controlled endpoints need a separate scope decision.
+11. **Multiple simultaneous sharers.** The [party-mode assessment](./research/room-interactions.md#multiple-sharers-assessment-not-implemented)
+    separates room administration from publication ownership, with one selected
+    picture per Viewer and shared endpoint upload limits. Define publication and
+    subscription lifecycles before a prototype. The current one-Host contract
+    remains; names and UI follow the model decision.

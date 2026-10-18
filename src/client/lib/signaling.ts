@@ -6,6 +6,7 @@ import {
   type DisplayName,
   type QualitySettings,
   type RoutePolicy,
+  type ViewerRoutePreference,
   type ServerMessage,
 } from "../../shared/protocol";
 import type { SignalConnectionState } from "../types";
@@ -77,6 +78,9 @@ function signalUrl(): string {
 }
 
 export class SignalingClient {
+  private remoteInputEnabled = false;
+  private audioPresenceEnabled = false;
+  private hostAudioAvailable: boolean | null = null;
   interactions: RoomInteractionSession | null = null;
   private socket: WebSocket | null = null;
   private stopped = false;
@@ -101,20 +105,59 @@ export class SignalingClient {
     private readonly identity: SignalingIdentity,
     private readonly events: SignalingEvents,
     private readonly now: () => number = Date.now,
-    capabilities: { roomInteractions?: boolean } = {},
+    capabilities: { roomInteractions?: boolean; roomReactionIds?: readonly string[] } = {},
   ) {
-    if (capabilities.roomInteractions) this.enableRoomInteractions();
+    if (capabilities.roomInteractions) this.enableRoomInteractions(capabilities.roomReactionIds);
   }
 
   // Capability discovery may finish after media authentication. Enabling room
   // data must not replace the signaling connection or its healthy media.
-  enableRoomInteractions(): RoomInteractionSession | null {
+  enableRoomInteractions(reactionIds?: readonly string[]): RoomInteractionSession | null {
     if (this.stopped) return null;
     if (!this.interactions) {
-      this.interactions = new RoomInteractionSession(message => this.send(message), this.now);
+      this.interactions = new RoomInteractionSession(message => this.send(message), this.now, reactionIds);
       if (this.authenticatedPeerId) this.interactions.authenticated(this.authenticatedPeerId);
+    } else {
+      this.interactions.setSupportedReactions(reactionIds);
     }
     return this.interactions;
+  }
+
+  enableRemoteInput(): void {
+    if (this.stopped || this.identity.role !== "host") return;
+    this.remoteInputEnabled = true;
+    if (this.authenticatedPeerId) this.send({ type: "subscribe-remote-input" });
+  }
+
+  enableAudioPresence(): void {
+    if (this.stopped) return;
+    this.audioPresenceEnabled = true;
+    this.flushAudioPresence();
+  }
+
+  setAudioAvailable(available: boolean): void {
+    if (this.identity.role !== "host") return;
+    this.hostAudioAvailable = available;
+    this.flushAudioPresence();
+  }
+
+  private flushAudioPresence(): void {
+    if (!this.audioPresenceEnabled || !this.authenticatedPeerId) return;
+    if (this.identity.role === "viewer") this.send({ type: "subscribe-audio-presence" });
+    else if (this.identity.shareGeneration && this.pendingShareGeneration === null && this.hostAudioAvailable !== null) {
+      this.send({ type: "set-audio-presence", shareGeneration: this.identity.shareGeneration, available: this.hostAudioAvailable });
+    }
+  }
+
+  enableViewerRouteSelection(preference: ViewerRoutePreference = "auto"): void {
+    if (this.stopped || this.identity.role !== "viewer") return;
+    this.identity.routePreference ??= preference;
+    if (this.authenticatedPeerId) this.setViewerRoutePreference(this.identity.routePreference);
+  }
+
+  setViewerRoutePreference(preference: ViewerRoutePreference): boolean {
+    return this.identity.role === "viewer" && this.identity.routePreference !== undefined &&
+      this.send({ type: "set-viewer-route-preference", preference });
   }
 
   start(): void {
@@ -231,6 +274,7 @@ export class SignalingClient {
     this.identity.roomOnly = true;
     this.pendingShareGeneration = null;
     this.hostQualityIntent = null;
+    this.hostAudioAvailable = null;
     return sent;
   }
 
@@ -296,6 +340,7 @@ export class SignalingClient {
     debugEvent("signal", "connecting", { role: this.identity.role, generation });
     const socket = new WebSocket(signalUrl());
     this.socket = socket;
+    let routeSelectionRequestedAtAuth = false;
 
     socket.addEventListener("open", () => {
       if (
@@ -310,6 +355,7 @@ export class SignalingClient {
         protocol: SIGNALING_PROTOCOL,
         ...this.identity,
       };
+      routeSelectionRequestedAtAuth = authenticate.role === "viewer" && authenticate.routePreference !== undefined;
       socket.send(JSON.stringify(authenticate));
       this.authenticationTimer = window.setTimeout(() => {
         if (!this.authenticatedPeerId && this.socket === socket) {
@@ -383,11 +429,21 @@ export class SignalingClient {
         debugEvent("signal", "authenticated", { role: this.identity.role, generation });
         this.refreshSignalingWatchdog();
         this.interactions?.authenticated(message.peerId);
+        if (this.remoteInputEnabled) this.send({ type: "subscribe-remote-input" });
+        // Discovery can complete after the authentication request was sent.
+        if (!routeSelectionRequestedAtAuth && this.identity.role === "viewer" && this.identity.routePreference !== undefined) {
+          this.setViewerRoutePreference(this.identity.routePreference);
+        }
         this.reconcileHostShareState(message);
+        this.flushAudioPresence();
+      }
+      if (message.type === "viewer-route-preference" && this.identity.role === "viewer") {
+        this.identity.routePreference = message.preference;
       }
       if ((message.type === "sharing-started" || message.type === "sharing-start-failed") &&
         this.pendingShareGeneration === message.shareGeneration) {
         this.pendingShareGeneration = null;
+        if (message.type === "sharing-started") this.flushAudioPresence();
       }
       if (message.type === "sharing-start-failed" && this.identity.role === "host" &&
         this.identity.shareGeneration === message.shareGeneration) {

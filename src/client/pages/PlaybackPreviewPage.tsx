@@ -1,25 +1,29 @@
 import { useEffect, useRef, useState } from "react";
+import type { VideoFit } from "../media/video-geometry";
 import { AppHeader } from "../components/living/Header";
 import { PlaybackControls } from "../components/living/PlaybackControls";
-import { StageTv } from "../components/living/Stage";
+import { StageOverlay, StageTv } from "../components/living/Stage";
+import { StatusIndicator } from "../components/living/StatusIndicator";
+import { STATUS_CATALOG } from "../ui/media-status";
 import { useCopy } from "../ui/copy";
 
 function testMedia(withAudio: boolean) {
   const canvas = document.createElement("canvas");
   canvas.width = 640;
-  canvas.height = 360;
+  // A 4:3 picture makes contain, crop and stretch visible in the 16:9 player.
+  canvas.height = 480;
   const paint = canvas.getContext("2d")!;
   const started = performance.now();
   let animation = 0;
   function draw(now: number) {
     const seconds = (now - started) / 1000;
     paint.fillStyle = "#172c3b";
-    paint.fillRect(0, 0, 640, 360);
+    paint.fillRect(0, 0, 640, 480);
     paint.fillStyle = "#29475b";
-    paint.fillRect(0, 260, 640, 100);
+    paint.fillRect(0, 340, 640, 140);
     paint.fillStyle = "#9de8bf";
     paint.beginPath();
-    paint.arc(320 + Math.sin(seconds) * 190, 180, 26, 0, Math.PI * 2);
+    paint.arc(320 + Math.sin(seconds) * 190, 240, 26, 0, Math.PI * 2);
     paint.fill();
     paint.fillStyle = "#dfe8f2";
     paint.font = "24px monospace";
@@ -29,10 +33,11 @@ function testMedia(withAudio: boolean) {
   draw(started);
   const stream = canvas.captureStream(30);
   let audio: AudioContext | undefined;
+  let gain: GainNode | undefined;
   if (withAudio) {
     audio = new AudioContext();
     const tone = audio.createOscillator();
-    const gain = audio.createGain();
+    gain = audio.createGain();
     const destination = audio.createMediaStreamDestination();
     tone.frequency.value = 220;
     gain.gain.value = 0.02;
@@ -43,6 +48,7 @@ function testMedia(withAudio: boolean) {
   return {
     stream,
     audio,
+    setAudioInput(available: boolean) { if (gain) gain.gain.value = available ? 0.02 : 0; },
     stop() {
       cancelAnimationFrame(animation);
       stream.getTracks().forEach((track) => track.stop());
@@ -52,13 +58,17 @@ function testMedia(withAudio: boolean) {
 }
 
 export function PlaybackPreviewPage() {
-  const { lang } = useCopy();
+  const { lang, t } = useCopy();
   const english = lang === "en";
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRef = useRef<ReturnType<typeof testMedia> | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [theaterMode, setTheaterMode] = useState(false);
+  const [pictureFit, setPictureFit] = useState<VideoFit>("contain");
+  const [viewerRoute, setViewerRoute] = useState<"auto" | "p2p" | "sfu">("auto");
   const [error, setError] = useState("");
+  const [waiting, setWaiting] = useState(true);
+  const [audioAvailable, setAudioAvailable] = useState(false);
   const hasAudio = Boolean(stream?.getAudioTracks().length);
 
   function play() {
@@ -74,7 +84,9 @@ export function PlaybackPreviewPage() {
     const media = testMedia(withAudio);
     mediaRef.current = media;
     setError("");
+    setWaiting(false);
     setStream(media.stream);
+    setAudioAvailable(withAudio);
     if (media.audio) void media.audio.resume().catch((cause: unknown) => setError(String(cause)));
   }
 
@@ -107,20 +119,31 @@ export function PlaybackPreviewPage() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button className="lr-btn" type="button" onClick={() => start(false)}>
             {english ? "Start picture only" : "开启无声测试画面"}</button>
+          <button className="lr-btn" type="button" aria-pressed={waiting} onClick={() => setWaiting(value => !value)}>
+            {english ? "Connection overlay" : "连接遮罩"}</button>
           <button className="lr-btn" type="button" disabled={!stream} onClick={() => start(!hasAudio)}>
             {hasAudio ? (english ? "Remove audio track" : "移除音轨") : (english ? "Add quiet test tone" : "加入轻音量测试音")}</button>
           <button className="lr-btn" type="button" disabled={!stream} onClick={() => start(hasAudio)}>
             {english ? "Rebind new stream" : "重新绑定新流"}</button>
+          <button className="lr-btn" type="button" disabled={!hasAudio} onClick={() => {
+            mediaRef.current?.setAudioInput(!audioAvailable);
+            setAudioAvailable(!audioAvailable);
+          }}>{audioAvailable ? (english ? "Stop audio input, keep track" : "关闭声音输入，保留音轨")
+              : (english ? "Restore audio input" : "恢复声音输入")}</button>
         </div>
         {error ? <p role="alert">{error}</p> : null}
       </header> : null}
       <div className="lr-scene">
-        <StageTv live={Boolean(stream)} label={english ? "Local test picture" : "本机测试画面"}>
-          <video ref={videoRef} playsInline tabIndex={0} inert={!stream}
+        <StageTv live={Boolean(stream)} label={english ? "Local test picture" : "本机测试画面"}
+          indicator={<StatusIndicator status={waiting ? STATUS_CATALOG.joining : stream ? STATUS_CATALOG.connected : STATUS_CATALOG.idle} />}>
+          <video ref={videoRef} playsInline tabIndex={0} inert={!stream} style={{ objectFit: pictureFit }}
             aria-label={english ? "Local test video" : "本机测试视频"} />
-          <PlaybackControls videoRef={videoRef} stream={stream}
+          {waiting && <StageOverlay dim waiting icon={STATUS_CATALOG.joining.icon} message={t(STATUS_CATALOG.joining.labelKey)} comic={STATUS_CATALOG.joining.comic} />}
+          <PlaybackControls videoRef={videoRef} stream={stream} audioAvailable={audioAvailable}
+            settings={{ pictureFit, setPictureFit, route: { preference: viewerRoute, onChange: setViewerRoute,
+              sfuAvailable: true, sfuOnly: false, peerOnly: false, disabled: false, rejected: false } }}
             audioTrackKey={stream?.getAudioTracks().map((track) => track.id).join(",")}
-            canPlay={Boolean(stream)} theaterMode={theaterMode} onPlay={play}
+            canPlay={Boolean(stream) && !waiting} theaterMode={theaterMode} onPlay={play}
             onToggleTheater={() => setTheaterMode((value) => !value)}
             onReconnect={() => start(hasAudio)} reconnectAvailable={Boolean(stream)} />
         </StageTv>

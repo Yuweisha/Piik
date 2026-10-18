@@ -1002,7 +1002,7 @@ func (c *Controller) commitAttempt(op *operation, att *attempt) []*Resource {
 			}
 			remainingParentPeerIDs = append(remainingParentPeerIDs, op.deferredParentPeerIDs...)
 		}
-		if len(remainingParentPeerIDs) > 0 {
+		if len(remainingParentPeerIDs) > 0 && c.allowsIncoming(op.childPeerID, UpstreamPeer) {
 			// Dedupe preserving first occurrence.
 			c.directContinuations.Set(op.childPeerID, &directContinuation{
 				childSessionID:        op.childSessionID,
@@ -1330,7 +1330,7 @@ func (c *Controller) selectNextChild() string {
 				departedParents = append(departedParents, viewer.peerID)
 			}
 		}
-		if edge != nil && !edge.Usable {
+		if edge != nil && (!edge.Usable || !c.allowsIncoming(viewer.peerID, edge.Kind) || c.parentRouteRetired(edge)) {
 			unusable = append(unusable, viewer.peerID)
 		}
 		if edge != nil && edge.Kind == UpstreamSfu &&
@@ -1350,6 +1350,33 @@ func (c *Controller) selectNextChild() string {
 		return ""
 	}
 	return candidates[0]
+}
+
+// Restore newly available session opportunities behind a healthy SFU edge.
+// Existing parent intents survive temporary capacity constraints; the normal
+// opportunity ledger still owns eligibility and the attempt budget.
+func (c *Controller) restoreDirectContinuation(peerID string) {
+	child, _ := c.participants.Get(peerID)
+	edge, _ := c.upstreamByViewer.Get(peerID)
+	if child == nil || child.sessionID == "" || !c.allowsIncoming(peerID, UpstreamPeer) ||
+		edge == nil || edge.Kind != UpstreamSfu || !edge.Usable || !edge.PhysicalActive || !c.usableRoute(peerID) {
+		return
+	}
+	var parents []string
+	if previous, ok := c.directContinuations.Get(peerID); ok {
+		parents = append(parents, previous.parentPeerIDs...)
+	}
+	for _, plan := range c.buildCandidates(peerID, false) {
+		if plan.Tuple.Kind == UpstreamPeer && plan.EndpointTransition.Kind != TransitionBoundedGap {
+			parents = append(parents, plan.Tuple.ParentPeerID)
+		}
+	}
+	if len(parents) > 0 {
+		c.directContinuations.Set(peerID, &directContinuation{
+			childSessionID: child.sessionID, sfuConnectionID: edge.ConnectionID,
+			publicationGeneration: edge.PublicationGeneration, parentPeerIDs: dedupeStrings(parents),
+		})
+	}
 }
 
 // directContinuationPick is the selectDirectContinuation result.

@@ -22,6 +22,7 @@ import (
 	"github.com/TNTcraftHIM/Piik/internal/app/nativecapture"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativehost"
 	"github.com/TNTcraftHIM/Piik/internal/app/nativeviewer"
+	"github.com/TNTcraftHIM/Piik/internal/app/remoteinput"
 	"github.com/TNTcraftHIM/Piik/internal/diagnostics"
 	"github.com/TNTcraftHIM/Piik/internal/server/protocol"
 	"github.com/pion/webrtc/v4"
@@ -42,6 +43,7 @@ type Session struct {
 	captureProcess string
 	capabilities   nativecapture.Capabilities
 	portMapping    bool
+	remoteInput    *remoteinput.Manager
 	ctx            context.Context
 	cancel         context.CancelFunc
 	events         chan any
@@ -69,12 +71,14 @@ func New(
 	captureProcess string,
 	capabilities nativecapture.Capabilities,
 	portMapping bool,
+	remoteInput *remoteinput.Manager,
 ) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &Session{
 		captureProcess: captureProcess,
 		capabilities:   capabilities,
 		portMapping:    portMapping,
+		remoteInput:    remoteInput,
 		ctx:            ctx,
 		cancel:         cancel,
 		events:         make(chan any, 256),
@@ -203,6 +207,61 @@ func (session *Session) Handle(ctx context.Context, payload []byte) (result any,
 		result = session.beginShare(ctx, envelope, request, complete)
 		asynchronous = result == nil
 		return result, nil
+	case "set-remote-input-peers":
+		var request remoteInputPeersRequest
+		if err := decodeStrict(payload, &request); err != nil || !validIdentities(request.ShareID) || len(request.Peers) > 20 {
+			return nil, protocolViolation("native input endpoints are invalid")
+		}
+		host := session.current(request.ShareID)
+		if host == nil {
+			return nil, errors.New("native share does not exist")
+		}
+		if err := host.SetRemoteInputPeers(request.Peers); err != nil {
+			return nil, err
+		}
+		return response(envelope, "remote-control-set"), nil
+	case "set-remote-control-policy":
+		var request remoteControlPolicyRequest
+		if err := decodeStrict(payload, &request); err != nil || !validIdentities(request.ShareID) {
+			return nil, protocolViolation("native remote-control policy is invalid")
+		}
+		host := session.current(request.ShareID)
+		if host == nil {
+			return nil, errors.New("native share does not exist")
+		}
+		// Revocation is independent of capture preparation and its operation slot.
+		if request.Mode == "off" {
+			apply, err := host.PrepareRemoteInputPolicy(request.Mode, request.Password)
+			if err != nil {
+				return nil, err
+			}
+			return response(envelope, "remote-control-set"), apply()
+		}
+		var apply func() error
+		result = session.runHostOperation(host, envelope, func() error {
+			var err error
+			apply, err = host.PrepareRemoteInputPolicy(request.Mode, request.Password)
+			return err
+		}, func() (any, error) {
+			err := apply()
+			return response(envelope, "remote-control-set"), err
+		}, complete)
+		asynchronous = result == nil
+		return result, nil
+	case "set-remote-control":
+		var request remoteControlRequest
+		if err := decodeStrict(payload, &request); err != nil ||
+			!validIdentities(request.ShareID, request.RequestID) || request.Allow == nil {
+			return nil, protocolViolation("native remote-control decision is invalid")
+		}
+		host := session.current(request.ShareID)
+		if host == nil {
+			return nil, errors.New("native share does not exist")
+		}
+		if err := host.DecideRemoteInput(request.RequestID, *request.Allow); err != nil {
+			return nil, err
+		}
+		return response(envelope, "remote-control-set"), nil
 	case "set-microphone":
 		var request microphoneRequest
 		if err := decodeStrict(payload, &request); err != nil || !validIdentities(request.ShareID) ||
@@ -225,7 +284,7 @@ func (session *Session) Handle(ctx context.Context, payload []byte) (result any,
 		if request.Enabled == nil && request.DeviceID == nil {
 			return response(envelope, "microphone-set"), nil
 		}
-		result = session.runHostOperation(host, envelope, func() (any, error) {
+		result = session.runHostOperation(host, envelope, nil, func() (any, error) {
 			err := host.SetMicrophone(request.Enabled, nil, request.DeviceID)
 			return response(envelope, "microphone-set"), err
 		}, complete)
@@ -275,7 +334,7 @@ func (session *Session) Handle(ctx context.Context, payload []byte) (result any,
 		slog.Debug("piik-client", "event", "native-source-requested", "requestId", envelope.ID,
 			"share", diagnostics.ID(request.ShareID), "sourceKind", request.Source.Kind, "audio", audio,
 			"adapterIndex", request.AdapterIndex, "encoderIndex", request.EncoderIndex)
-		result = session.runHostOperation(host, envelope, func() (any, error) {
+		result = session.runHostOperation(host, envelope, nil, func() (any, error) {
 			err := host.ReplaceSource(nativecapture.VideoOptions{
 				Target:            request.Source,
 				ShowCaptureBorder: request.ShowCaptureBorder && session.capabilities.CaptureBorderControl,
@@ -472,7 +531,7 @@ func (session *Session) Close() error {
 }
 
 func (session *Session) updateHost(host *nativehost.Session, request requestEnvelope, shareID string, profile nativehost.QualityProfile, complete func(any, error)) any {
-	return session.runHostOperation(host, request, func() (any, error) {
+	return session.runHostOperation(host, request, nil, func() (any, error) {
 		err := host.UpdateProfile(profile)
 		return session.shareUpdateResult(request, shareID, profile, err), err
 	}, complete)
@@ -480,11 +539,19 @@ func (session *Session) updateHost(host *nativehost.Session, request requestEnve
 
 // Capture mutations share one bounded operation slot. Stop remains
 // synchronous and cancels the owning share before joining this completion.
-func (session *Session) runHostOperation(host *nativehost.Session, request requestEnvelope, operation func() (any, error), complete func(any, error)) any {
+func (session *Session) runHostOperation(host *nativehost.Session, request requestEnvelope, prepare func() error, operation func() (any, error), complete func(any, error)) any {
 	session.mu.Lock()
 	if session.closed || session.host != host || session.updateDone != nil || session.startCancel != nil {
 		session.mu.Unlock()
 		return operationFailure(request, errors.New("native share operation is unavailable or already active"))
+	}
+	// Register an authority-changing intent before asynchronous work can be
+	// overtaken by off/pause. This step never waits for an OS permission dialog.
+	if prepare != nil {
+		if err := prepare(); err != nil {
+			session.mu.Unlock()
+			return operationFailure(request, err)
+		}
 	}
 	done := make(chan struct{})
 	session.updateDone = done
@@ -588,7 +655,14 @@ func (session *Session) startShare(
 		return nil, errors.New("native share is already active")
 	}
 	session.mu.Unlock()
+	// Old pages reject unknown events. Only an opted-in page can own input
+	// requests; this advertises support, not permission for any Viewer.
+	var input *remoteinput.Manager
+	if request.RemoteInput {
+		input = session.remoteInput
+	}
 	host, err := nativehost.Start(ctx, nativehost.Options{
+		RemoteInput:    input,
 		ShareID:        request.ShareID,
 		CaptureProcess: session.captureProcess,
 		Video: nativecapture.VideoOptions{
@@ -871,19 +945,32 @@ func (session *Session) stopViewer(shareID string) {
 }
 
 func (session *Session) watchHost(host *nativehost.Session) {
-	err, open := <-host.Done()
-	session.mu.Lock()
-	if session.host == host {
-		session.host = nil
-	}
-	session.mu.Unlock()
-	if open {
-		session.emit(shareEndedEvent{
-			Version: loopback.ProtocolVersion,
-			Type:    "share-ended",
-			ShareID: host.ShareID(),
-			Failed:  err != nil,
-		})
+	for {
+		select {
+		case <-host.RemoteInputChanges():
+			session.emit(loopback.ControlEvent{
+				Value: remoteControlStateEvent{
+					eventEnvelope: eventEnvelope{Version: loopback.ProtocolVersion, Type: "remote-control-state", ShareID: host.ShareID()},
+					State:         host.RemoteInputState(),
+				},
+				Current: func() bool { return session.current(host.ShareID()) == host },
+			})
+		case err, open := <-host.Done():
+			session.mu.Lock()
+			if session.host == host {
+				session.host = nil
+			}
+			session.mu.Unlock()
+			if open {
+				session.emit(shareEndedEvent{
+					Version: loopback.ProtocolVersion,
+					Type:    "share-ended",
+					ShareID: host.ShareID(),
+					Failed:  err != nil,
+				})
+			}
+			return
+		}
 	}
 }
 

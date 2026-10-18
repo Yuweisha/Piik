@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { activateClient, isClientActivated, watchClientActivation } from "../../lib/session";
+import { useProjectLink } from "../../lib/use-project-link";
 import { useCopy } from "../../ui/copy";
 import { Glyph } from "../../ui/icons";
 import { Tooltip } from "./Tooltip";
 import { Comic } from "./Comic";
+import { useAnchoredPopover } from "./use-anchored-popover";
 
 interface AppConnectionProps {
   sourcePicker?: boolean;
@@ -25,9 +27,11 @@ function AppConnectionControl({ sourcePicker = false, onConnected }: AppConnecti
   const { t, vis } = useCopy();
   const [state, setState] = useState<"idle" | "busy" | "ready" | "unavailable" | "incompatible">("idle");
   const [helpOpen, setHelpOpen] = useState(false);
+  const downloadURL = useProjectLink("/#download", "https://github.com/TNTcraftHIM/Piik/releases/latest", helpOpen);
   const helpId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const help = useRef<HTMLDivElement>(null);
+  useAnchoredPopover(trigger, help);
   const pending = useRef<{ controller: AbortController; popup: Window | null } | null>(null);
   const healthCheck = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -56,13 +60,6 @@ function AppConnectionControl({ sourcePicker = false, onConnected }: AppConnecti
     return () => { healthCheck.current?.abort(); window.removeEventListener("focus", onFocus); unwatch(); };
   }, [sourcePicker]);
   useEffect(() => () => { pending.current?.controller.abort(); pending.current?.popup?.close(); }, []);
-  useEffect(() => {
-    // A one-shot disclosure follows its trigger again on the next opening.
-    const close = () => help.current?.hidePopover();
-    window.addEventListener("resize", close);
-    window.addEventListener("scroll", close);
-    return () => { window.removeEventListener("resize", close); window.removeEventListener("scroll", close); };
-  }, []);
 
   function showHelp(): void {
     if (trigger.current) help.current?.showPopover({ source: trigger.current });
@@ -159,17 +156,7 @@ function AppConnectionControl({ sourcePicker = false, onConnected }: AppConnecti
       className="lr-app-connect-help" onToggle={event => {
         setHelpOpen(event.newState === "open");
         if (event.newState !== "open" || !trigger.current) return;
-        const panel = event.currentTarget;
-        const rect = trigger.current.getBoundingClientRect();
-        if (rect.bottom <= 0 || rect.top >= window.innerHeight) { panel.hidePopover(); return; }
-        const below = window.innerHeight - rect.bottom - 16;
-        const above = rect.top - 16;
-        const openAbove = below < panel.scrollHeight && above > below;
-        panel.classList.toggle("is-above", openAbove);
-        panel.style.maxHeight = `${Math.max(0, openAbove ? above : below)}px`;
-        panel.style.left = `${Math.max(8, Math.min(rect.right - panel.offsetWidth, window.innerWidth - panel.offsetWidth - 8))}px`;
-        panel.style.top = `${Math.max(8, openAbove ? rect.top - panel.offsetHeight - 8 : rect.bottom + 8)}px`;
-        panel.querySelector<HTMLButtonElement>("button")?.focus();
+        event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
       }}>
       <div className="lr-app-connect-head">
         <div className="lr-app-connect-scene" aria-hidden="true">{helpOpen && <Comic kind={state === "incompatible" ? "warning" : "signal-failed"} theme="paper" />}</div>
@@ -183,7 +170,7 @@ function AppConnectionControl({ sourcePicker = false, onConnected }: AppConnecti
         <button type="button" className="lr-btn" aria-label={t("common.retry")} onClick={() => void connect()}>
           <Glyph name="refresh" size={16} /><span className={vis ? "visually-hidden" : undefined}>{t("common.retry")}</span>
         </button>
-        <a className="lr-btn" href="https://piik.tv/#download" target="_blank" rel="noopener noreferrer" aria-label={t("client.connect.download")}>
+        <a className="lr-btn" href={downloadURL} target="_blank" rel="noopener noreferrer" aria-label={t("client.connect.download")}>
           <Glyph name="arrowDown" size={16} /><span className={vis ? "visually-hidden" : undefined}>{t("client.connect.download")}</span>
         </a>
       </div>

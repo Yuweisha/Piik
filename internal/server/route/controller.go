@@ -40,6 +40,7 @@ type participant struct {
 	consumedCandidateOpportunities ordered.Map[string, candidateOpportunity]
 	bootstrapFailureReported       bool
 	sfuFirstAtNextRoute            bool
+	routePreference                protocol.ViewerRoutePreference
 }
 
 // sessionIs never matches a disconnected participant, including an empty id.
@@ -465,6 +466,17 @@ func (c *Controller) UpsertParticipant(input ParticipantInput, nowMs *int64) []*
 		if input.Role == protocol.RoleViewer && nowMs != nil && !c.usableRoute(input.PeerID) {
 			c.recordDemand(input.PeerID, *nowMs, DemandJoin)
 		}
+		if input.Role == protocol.RoleViewer {
+			released = append(released, c.SetViewerRoutePreference(input.PeerID, input.SessionID, input.RoutePreference, nowMs)...)
+		}
+		if previousSessionID != input.SessionID {
+			// Reauthentication opens this session's opportunities even when SFU
+			// media survived. Restore child and parent opportunities in the same
+			// bounded continuation owner, without changing healthy media.
+			for peerID := range c.upstreamByViewer.All() {
+				c.restoreDirectContinuation(peerID)
+			}
+		}
 		return released
 	}
 	// New participants append to the scheduling order.
@@ -473,6 +485,7 @@ func (c *Controller) UpsertParticipant(input ParticipantInput, nowMs *int64) []*
 		role:                        input.Role,
 		sessionID:                   input.SessionID,
 		effectiveDownstreamCapacity: capacity,
+		routePreference:             input.RoutePreference,
 		joinOrder:                   c.nextJoinOrder,
 	})
 	c.nextJoinOrder++
@@ -484,6 +497,33 @@ func (c *Controller) UpsertParticipant(input ParticipantInput, nowMs *int64) []*
 		c.recordDemand(input.PeerID, *nowMs, DemandJoin)
 	}
 	c.touchFacts()
+	return released
+}
+
+// SetViewerRoutePreference changes eligibility, not physical edge health. The
+// ordinary serial handoff keeps current media until commit or strict-policy
+// exhaustion; selecting Auto again reopens only this Viewer's opportunities.
+func (c *Controller) SetViewerRoutePreference(peerID, sessionID string, preference protocol.ViewerRoutePreference, nowMs *int64) []*Resource {
+	current, _ := c.participants.Get(peerID)
+	if current == nil || current.role != protocol.RoleViewer || !current.sessionIs(sessionID) || current.routePreference == preference {
+		return nil
+	}
+	var released []*Resource
+	if op := c.operation; op != nil && (op.childPeerID == peerID || op.demandPeerID == peerID) {
+		released = c.abortOperation(nowMs, RejectionAborted)
+	}
+	current.routePreference = preference
+	current.consumedCandidateOpportunities.Clear()
+	current.availabilityExhausted = false
+	current.bootstrapFailureReported = false
+	c.directContinuations.Delete(peerID)
+	c.clearSfuBootstrapForDemand(peerID)
+	c.touchFacts()
+	c.restoreDirectContinuation(peerID)
+	c.debug("viewer-route-preference", "participant", c.debugPeer(peerID), "preference", preference)
+	if nowMs != nil {
+		c.recordDemand(peerID, *nowMs, c.routeDemandReason(peerID))
+	}
 	return released
 }
 

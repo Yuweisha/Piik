@@ -34,6 +34,7 @@ Piik 是一个免费开源的私密屏幕共享工具，适合游戏直播、一
 - **优先直接连接。** 画面优先在设备之间传输（P2P），自建站点可启用媒体转发（SFU）自动兜底。
 - **房间由你管理。** 支持邀请链接、房间号和可选的房间密码，一位房主、最多 20 位观众。
 - **边看边聊。** 发送文字、和朋友互送表情，也可开启弹幕。
+- **让朋友接手操作。** 通过 Piik App 分享时，可选择让一位观众操作键鼠，随时结束控制。
 - **灵活的观看方式。** 支持深浅主题、播放控制、画中画和连接拓扑查看。
 - **一个程序就能建站。** 网页、房间管理和可选的媒体转发打包在同一服务端程序中。
 
@@ -55,7 +56,6 @@ Piik 是一个免费开源的私密屏幕共享工具，适合游戏直播、一
 | --- | --- |
 | [使用在线版](https://demo.piik.tv) | 用电脑浏览器分享画面；手机浏览器支持摄像头访问时，也可选择摄像头分享。 |
 | [下载 Piik App](https://piik.tv/?lang=zh-CN#download) | 解压并启动 Piik App，选择**公网邀请**，点击**进入 Piik**，创建临时房间。 |
-| [部署自己的站点](./docs/operations/self-hosting.zh-CN.md) | 进阶使用：在 Linux x64 或 ARM64 服务器上部署 Piik Server、配置自己的域名，再用 Piik App 或浏览器连接。 |
 
 <p align="center"><img src="./docs/assets/quickstart.svg" width="640" alt="选择画面，发送邀请，一起观看。"></p>
 
@@ -87,6 +87,10 @@ Piik App 的公网邀请和在线版使用纯 P2P 连接，
 
 ## 自行部署
 
+想为朋友搭建站点时，再部署 Piik Server。使用 App 的公网邀请，无须自行部署服务器。
+
+<p><a href="./docs/operations/self-hosting.zh-CN.md#使用-docker-compose"><img src="https://img.shields.io/badge/Deploy_with-Docker_Compose-2764c4?style=for-the-badge&amp;logo=docker&amp;logoColor=white" alt="使用 Docker Compose 部署 Piik"></a></p>
+
 Piik Server 是一个内置网页界面的独立程序。
 根据服务器架构下载 Linux x64 的 `piik-<revision>-runtime.tar.gz` 或 ARM64 的
 `piik-<revision>-linux-arm64-runtime.tar.gz`，解压后运行：
@@ -111,3 +115,17 @@ Piik Server 是一个内置网页界面的独立程序。
 ## 许可
 
 Piik 自有代码采用 [MIT 许可](./LICENSE)，依赖保留各自的[许可与声明](./licenses/README.md)。
+
+## 项目动态
+
+<p align="center">
+  <a href="https://trendshift.io/repositories/236065"><img src="https://trendshift.io/api/badge/trendshift/repositories/236065/daily?language=TypeScript" width="250" alt="Piik 的 Trendshift 趋势"></a>
+</p>
+<p align="center">
+  <a href="https://www.star-history.com/#TNTcraftHIM/Piik&amp;Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=TNTcraftHIM/Piik&amp;type=Date&amp;theme=dark">
+      <img src="https://api.star-history.com/svg?repos=TNTcraftHIM/Piik&amp;type=Date" width="760" alt="Piik GitHub 星标增长趋势">
+    </picture>
+  </a>
+</p>

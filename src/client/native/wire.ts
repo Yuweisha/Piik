@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { remoteControlModeSchema, remoteInputPlatformSchema } from "../remote-control/protocol";
 import { sfuMediaSchema, positiveUint32Schema, qualityResolutionSchema, punchPredictionSchema,
   nullableSafeEvidenceNumber, nullableSafeEvidenceInteger } from "../../shared/protocol";
 
@@ -41,6 +42,7 @@ export const nativeHealthSchema = nativeDiscoveryIdentitySchema.extend({
       maxVideoFramerate: z.number().positive().max(Number.MAX_SAFE_INTEGER).optional(),
       maxVideoBitrate: positiveUint32Schema.optional(),
       receiverReuse: z.boolean().default(false),
+      remoteInput: z.boolean().optional(),
       video: z.boolean().default(false),
       processAudio: z.boolean().default(false),
       systemAudio: z.boolean().default(false),
@@ -256,6 +258,7 @@ export const nativeAckResponseSchema = z
       "share-stopped",
       "share-paused",
       "microphone-set",
+      "remote-control-set",
       "publication-answer-accepted",
       "publication-candidate-accepted",
       "publication-layers-accepted",
@@ -269,7 +272,18 @@ const eventBase = {
   shareId: opaqueIdentifierSchema,
 };
 
+const remoteControlRequestSchema = z.object({
+  id: opaqueIdentifierSchema,
+  peerId: opaqueIdentifierSchema,
+  state: z.enum(["pending", "active", "suspended"]),
+}).strict();
+export type RemoteControlRequest = z.infer<typeof remoteControlRequestSchema>;
+
+export const remoteControlStateSchema = z.object({ mode: remoteControlModeSchema, platform: remoteInputPlatformSchema, requests: z.array(remoteControlRequestSchema) });
+export type RemoteControlState = z.infer<typeof remoteControlStateSchema>;
+
 export const nativeEventSchema = z.discriminatedUnion("type", [
+  remoteControlStateSchema.extend({ ...eventBase, type: z.literal("remote-control-state") }).strict(),
   z.object({ ...eventBase, type: z.literal("audio-state"), sourceAudio: z.boolean(), microphone: z.boolean(), failed: z.boolean() }).strict(),
   z
     .object({

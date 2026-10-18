@@ -11,10 +11,12 @@ import { NativeSenderPeer } from "../src/client/native/native-sender-peer";
 import { NativeCompatibilityError, NativeRequestError } from "../src/client/native/client";
 import { nativeCaptureTargetKey } from "../src/client/native/capture-selection";
 import { NativeMediaBridgeError } from "../src/client/native/media-bridge";
+import { InputRoute } from "../src/client/remote-control/input-route";
 import { reconcileBoundedMediaChildren } from "../src/client/webrtc/media-assignment";
 import { debugError, debugEvent, debugOperation } from "../src/client/lib/debug";
 import { ApiError } from "../src/client/lib/api";
-import { hostActionErrorNotice, hostFailureCode, isCapturePermissionFailure } from "../src/client/pages/host-page-notices";
+import { hostActionErrorKey, hostServerErrorKey, hostFailureCode, isCapturePermissionFailure } from "../src/client/pages/host-page-notices";
+import { say, setCopy } from "../src/client/ui/copy";
 
 // Exercise the actual page owners without mounting capture hardware or a Browser.
 const source = ts.createSourceFile("HostPage.tsx", readFileSync(
@@ -27,18 +29,22 @@ const owners = new Set(["changeQuality", "commitQuality", "rememberQuality", "lo
   "openCaptureSourcePicker", "startBrowserShareFromPicker", "startNativeShareFromPicker",
   "startSharing", "connectRoomSignal", "createReplacementRoom", "beginRoomMutation", "finishRoomMutation", "setCaptureError", "changeMicrophone", "toggleSharingPause",
   "startPeer", "reconcileHostChildren", "setNotice", "setNoticeKey", "setStatusNotice", "setNoticeError", "setNoticeErrorKey", "endSharing", "disposeResources", "hostTerminationKey", "copyRoomLink", "isCurrentRoomAuthority",
-  "handleRoomAccessFailure", "replaceCurrentRoom", "forgetRoom", "endRoomSession"]);
+  "handleRoomAccessFailure", "replaceCurrentRoom", "forgetRoom", "endRoomSession", "readableError"]);
 
 const functions: string[] = [];
+let noticeRendering = "";
 function collect(node: ts.Node): void {
   if (ts.isFunctionDeclaration(node) && node.name && owners.has(node.name.text)) {
     functions.push(node.getText(source));
     owners.delete(node.name.text);
   }
+  if (ts.isVariableDeclaration(node) && node.name.getText(source) === "noticeText") {
+    noticeRendering = node.initializer!.getText(source);
+  }
   ts.forEachChild(node, collect);
 }
 collect(source);
-if (owners.size) throw new Error(`Missing Host owner: ${[...owners].join(", ")}`);
+if (owners.size || !noticeRendering) throw new Error(`Missing Host owner: ${[...owners].join(", ")}`);
 const executable = ts.transpileModule(functions.join("\n"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -72,7 +78,7 @@ function fixture(launchedByClient = true) {
     stopReceive: vi.fn(async () => undefined), stopShare: vi.fn(async () => undefined) };
   const route = { updateProfile: vi.fn(async () => true), resyncAuthoritative: vi.fn(async (): Promise<void> => undefined) };
   const state = {
-    debugError, debugEvent, debugOperation, NativeCompatibilityError, NativeRequestError, NativeMediaBridgeError, isCapturePermissionFailure, hostFailureCode, DOMException, AbortController,
+    debugError, debugEvent, debugOperation, NativeCompatibilityError, NativeRequestError, NativeMediaBridgeError, isCapturePermissionFailure, hostFailureCode, hostActionErrorKey, hostServerErrorKey, DOMException, AbortController,
     launchedByClient, isClientActivated: vi.fn(() => launchedByClient), hostRoomSessionAvailable: false,
     NativeClient: { connect: vi.fn(async (_options?: { signal: AbortSignal }): Promise<typeof client | null> => null) },
     nativeClientConnectRef: ref<{ promise: Promise<typeof client | null>; controller: AbortController } | null>(null),
@@ -96,18 +102,20 @@ function fixture(launchedByClient = true) {
     appQualityPreferenceRef: ref<{ save: (quality: QualitySettings) => void } | null>(null),
     qualityPreferenceEditedRef: ref(false), pendingAppQualityPreferenceRef: ref<QualitySettings | null>(null),
     activeGenerationRef: ref<number | null>(1), streamRef: ref<typeof stream | null>(stream), sourceSwitchRef: ref<object | null>(null),
-    nativeSourceAudioRef: ref<boolean | undefined>(undefined), setMicrophoneEnabled: vi.fn(),
+    nativeSourceAudioRef: ref<boolean | undefined>(undefined), audioAvailableRef: ref(false), setMicrophoneEnabled: vi.fn(),
     microphoneVoiceProcessing: true, setMicrophoneVoiceProcessing: vi.fn(),
     nativeSourceSelectionRef: ref<Record<string, unknown> | null>(null), nativeCaptureTargetKey,
     nativeModeRef: ref(false), nativeClientRef: ref<typeof client | null>(client), nativeShareGenerationRef: ref<string | null>("share"),
     hostAudioRef: ref<{ sourceStream: MediaStream } | null>(null),
     nativeMediaIngressRef: ref<ReturnType<typeof ingress> | null>(null), nativeMediaBridgeRef: ref(null),
+    nativeInputRoute: new InputRoute(() => {}),
     nativeEventCleanupRef: ref(null), nativeShareCleanupRef: ref(Promise.resolve()),
     peersRef: ref(new Map([["viewer", peer]])), hostProvisionalChildRef: ref(null), hostSfuRouteRef: ref(route),
-    signalRef: ref({ setHostQualitySettings: vi.fn(), send: vi.fn() }),
+    signalRef: ref({ setHostQualitySettings: vi.fn(), setAudioAvailable: vi.fn(), send: vi.fn() }),
     setQualitySettings: vi.fn(), setAdvancedQuality: vi.fn(), setChangingQuality: vi.fn(), savePreferredQuality: vi.fn(),
-    setNoticeValue: vi.fn(), setNoticeError: vi.fn(), readableError: hostActionErrorNotice,
-    setDetails: vi.fn(), setNativeActive: vi.fn(),
+    setNoticeValue: vi.fn(), setNoticeError: vi.fn(),
+    setDetails: vi.fn(), setNativeActive: vi.fn(), setRemoteControlState: vi.fn(),
+    remoteInputPeersRef: ref([]), getRuntimeCapabilities: vi.fn(async () => ({ remoteInput: false })),
     applyCaptureProfile: vi.fn(async (_stream: unknown, profile: QualitySettings) => { physical = profile; }),
     captureDetails: () => ({}),
     qualitySettingsEqual, qualityResolutionEqual, videoQualitySettingsEqual, screenAudioBitrate, qualitySettingsLabel,
@@ -148,6 +156,7 @@ function fixture(launchedByClient = true) {
     start: () => start( { kind: "native", client, target: {}, audio: false, path: {} }) as Promise<void>,
     startBrowser: () => start({ kind: "browser" }) as Promise<void>,
     writeNoticeError,
+    renderNotice: (noticeValue: unknown) => runInContext(noticeRendering, createContext({ noticeValue, t: say })),
     discover: context.acquireNativeClient as () => Promise<typeof client | null>,
     requestShare: context.requestSharing as () => void,
     startNative: () => context.startNativeShare(1, "share", { client, target: {}, audio: false, path: {} }) as Promise<unknown>,
@@ -232,6 +241,8 @@ describe("Host room ownership", () => {
       interactions = {};
       stop = vi.fn();
       stopSharing = vi.fn();
+      setAudioAvailable = vi.fn();
+      enableRoomInteractions = vi.fn(() => this.interactions);
       constructor(public identity: { roomId: string; token: string; roomOnly?: true; shareGeneration?: string },
         public events: {
           onMessage(message: unknown): void;
@@ -246,13 +257,12 @@ describe("Host room ownership", () => {
     Object.assign(current.signalRef, { current: null });
     current.generationRef.current = 1;
     Object.assign(current.context, {
-      SignalingClient: Signal, hostRoomSessionAvailable: true, roomInteractionsAvailable: true,
+      SignalingClient: Signal, hostRoomSessionAvailable: true, roomInteractionsAvailable: true, roomReactionIds: undefined,
       visRef: ref(false), hostClientIdRef: ref(null), displayNameRef: ref("Host"),
       getStableClientId: () => "host-client", defaultHostDisplayName: () => "Host", readDisplayName: () => "Host",
       setDisplayName: vi.fn(), setDisplayNameDraft: vi.fn(), setDisplayNameError: vi.fn(),
       setInteractionSession: vi.fn(), setSignalStatus: vi.fn(), forgetRoom,
       onAuthorizationRequired: vi.fn(), clearHostRoom: vi.fn(), writePreferredRoom: vi.fn(),
-      hostServerErrorNotice: (code: string) => code,
     });
     return { ...current, room, signals, forgetRoom, connect: (value = room) => current.context.connectRoomSignal(value) as Signal };
   }
@@ -836,7 +846,6 @@ describe("Host quality ownership", () => {
     const setNoticeValue = vi.fn();
     Object.assign(current.context, {
       phase: "idle", setNoticeValue, setNoticeError: current.writeNoticeError,
-      readableError: hostActionErrorNotice,
       captureBrowserSource: vi.fn(async () => { throw denied; }),
     });
     current.activeGenerationRef.current = null;
@@ -844,7 +853,7 @@ describe("Host quality ownership", () => {
     current.client.startShare.mockRejectedValue(denied);
     await (entry === "native" ? current.start() : current.startBrowser());
     expect(setNoticeValue).toHaveBeenLastCalledWith({
-      kind: "text", text: hostActionErrorNotice(denied, "capture"),
+      kind: "key", key: "host.capture.cancelled",
       target: "television", comic: "hint-capture-browser", tone: "warn",
       failureCode: "browser/NotAllowedError",
     });
@@ -1009,17 +1018,36 @@ describe("Host quality ownership", () => {
     const setNoticeValue = vi.fn();
     Object.assign(current.context, {
       setNoticeValue, setNoticeError: current.writeNoticeError,
-      readableError: hostActionErrorNotice,
     });
     current.client.replaceShareSource.mockRejectedValue(denied);
     await current.switchSource();
     expect(setNoticeValue).toHaveBeenLastCalledWith({
-      kind: "text", text: hostActionErrorNotice(denied, "source"),
+      kind: "key", key: "host.capture.cancelled",
       target: "operation", comic: "hint-capture-browser", tone: "warn",
       failureCode: "browser/NotAllowedError",
     });
     expect(current.setPhase).not.toHaveBeenCalled();
     expect(current.track.stop).not.toHaveBeenCalled();
+  });
+
+  it("keeps error keys until the actual page rendering uses the current language", () => {
+    const current = fixture();
+    const denied = new DOMException("private capture detail", "NotAllowedError");
+    current.writeNoticeError(denied, "capture", "television");
+    const notice = current.setNoticeValue.mock.lastCall![0];
+    expect(notice).toMatchObject({ kind: "key", key: "host.capture.cancelled" });
+    try {
+      setCopy({ lang: "en" });
+      expect(current.renderNotice(notice)).toBe("Screen selection cancelled or not permitted");
+      setCopy({ lang: "zh" });
+      expect(current.renderNotice(notice)).toBe("屏幕选择已取消或没有共享权限");
+      current.context.setNoticeKey(hostServerErrorKey("ROOM_FULL"), "signal-failed", "bad");
+      expect(current.renderNotice(current.setNoticeValue.mock.lastCall![0])).toBe("房间已满");
+      current.writeNoticeError(new ApiError("HTTP failure with specific context", 403), "room");
+      expect(current.renderNotice(current.setNoticeValue.mock.lastCall![0])).toBe("HTTP failure with specific context");
+    } finally {
+      setCopy({ lang: "zh" });
+    }
   });
 
   it.each([
@@ -1292,7 +1320,7 @@ describe("Host quality ownership", () => {
     const setResolvedVideoCodec = vi.fn();
     Object.assign(current.context, {
       phase: "idle", captureBrowserSource: async () => captured,
-      HostAudio: class {}, setStream: vi.fn(), watchCaptureEnd: vi.fn(),
+      HostAudio: class { audioAvailable = false; }, setStream: vi.fn(), watchCaptureEnd: vi.fn(),
       resolveStreamVideoCodec, startBrowserNativeIngress, setResolvedVideoCodec,
     });
     current.disposeResources.mockImplementation(() => {

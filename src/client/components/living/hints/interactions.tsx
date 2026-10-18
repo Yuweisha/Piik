@@ -65,7 +65,7 @@ function ChatSettingsHint({ theme }: { theme: ComicTheme }) {
   </g>)}</>;
 }
 
-function ChatWindowHint({ theme }: { theme: ComicTheme }) {
+function PanelWindowHint({ theme }: { theme: ComicTheme }) {
   return <><InteractionMotion />{[0, 160].map((x, index) => {
     const floating = Boolean(index);
     return <g key={x}>
@@ -76,7 +76,7 @@ function ChatWindowHint({ theme }: { theme: ComicTheme }) {
         <rect x={x + (floating ? 88 : 76)} y={floating ? 9 : 28} width={floating ? 48 : 34} height={floating ? 58 : 38}
           rx={5} fill="var(--paper)" stroke={YOU} strokeWidth={2} />
         <path d={`M${x + (floating ? 96 : 82)} ${floating ? 19 : 36}h${floating ? 22 : 18}`} stroke={FAINT} strokeWidth={2} strokeLinecap="round" />
-        <g transform={`translate(${x + (floating ? 96 : 81)} ${floating ? 29 : 42}) scale(${floating ? .85 : .65})`}><Bubble x={0} y={0} /></g>
+        <g transform={`translate(${x + (floating ? 98 : 83)} ${floating ? 30 : 43})`}><Glyph name="sliders" size={floating ? 27 : 20} /></g>
       </g>
     </g>;
   })}</>;
@@ -95,12 +95,31 @@ function ChatExportHint({ theme }: { theme: ComicTheme }) {
   </g>)}</>;
 }
 
+const ReactionPickerHint: HintScene = ({ theme }) => <>
+  <InteractionMotion />
+  {[0, 160].map((x, index) => <g key={x}>
+    <Frame x={x + 4} w={152} theme={theme} result={Boolean(index)} />
+    <rect x={x + 24} y={66} width={112} height={20} rx={7} fill="var(--wall-2)" stroke={FAINT} strokeWidth={2} />
+    <g transform={`translate(${x + 31} 68)`}><Glyph name="smile" size={16} /></g>
+    {index ? <g className="vls-talk-bubble">
+      <rect x={x + 24} y={12} width={112} height={49} rx={7} fill="var(--paper)" stroke={YOU} strokeWidth={2} />
+      <Pawn x={x + 57} yb={34} s={6} eyes /><Pawn x={x + 100} yb={34} s={6} color={SKY} eyes />
+      {(["smile", "heart", "star"] as const).map((name, i) => <g key={name} transform={`translate(${x + 43 + i * 27} 39)`}>
+        <Glyph name={name} size={15} />
+      </g>)}
+    </g> : <>
+      <Pawn x={x + 57} yb={54} s={10} eyes /><Pawn x={x + 104} yb={54} s={10} color={SKY} eyes />
+    </>}
+  </g>)}
+</>;
+
 export const INTERACTION_SCENES: Record<InteractionHintKind, HintScene> = {
+  "hint-reaction-picker": ReactionPickerHint,
   "hint-chat-open": props => <ChatHint {...props} />,
   "hint-chat-send": props => <ChatHint {...props} send />,
   "hint-chat-settings": props => <ChatSettingsHint {...props} />,
   "hint-chat-export": props => <ChatExportHint {...props} />,
-  "hint-chat-detach": props => <ChatWindowHint {...props} />,
+  "hint-window-detach": props => <PanelWindowHint {...props} />,
   "hint-chat-overlay-show": props => <OverlayHint {...props} show />,
   "hint-chat-overlay-hide": props => <OverlayHint {...props} show={false} />,
 };
