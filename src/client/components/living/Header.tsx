@@ -105,6 +105,8 @@ export function HeaderControls({ diagnosticControl }: { diagnosticControl?: Reac
       )}
     </button>
   );
+  // Upstream owns the header actions; this fork deliberately adds no download
+  // control because it ships the App packages through GitHub Releases only.
   return (
     <span className="lr-top-right lr-header-controls">
       <LanguageControl />
